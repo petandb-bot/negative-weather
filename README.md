@@ -1,18 +1,28 @@
-# NEGATIVE WEATHER
+# NEGATIVE WEATHER v0.3 — Chromatic Organism
 
-A photograph becomes a changing sound world.
+A photograph becomes a temporary sound world.
 
 ## Use
+1. Tap **SHOOT** to capture a photo, or **USE PHOTO LIBRARY** to load one.
+2. The app analyzes the image and generates one of four sound engines.
+3. Tap **PLAY** to hear the loop.
+4. Tap **MUTATE** to generate another version from the same image.
+5. Tap **SAVE** to export **WAV** or the current **PNG** frame.
 
-1. Tap **SHOOT** to take a photo, or **USE PHOTO LIBRARY** to select an image.
-2. The photo determines the likely sound engine, tempo, and animation character.
-3. Tap **PLAY** to hear the loop. Tap **MUTATE** for another result from the same photo.
-4. Tap **SAVE** to export WAV audio or a PNG of the current frame.
+## What changed in v0.3
+- Stronger photo-dependent sound character
+- More internal variation inside each engine
+- BPM is shaped by the image
+- Color animation now shifts over time
+- Visual motion reacts to generated sound events
 
-Each photo favors certain results, but unexpected variations are possible. VEIL, PULSE, CURRENT, and PARTICLE use different musical structures. The BPM displayed is a generated tempo derived from image features, not a measurement of movement in the photograph.
+## Engines
+- **VEIL** — ambient / harmonic bloom
+- **PULSE** — experimental beat / micro rhythm
+- **CURRENT** — drone / slow modulation
+- **PARTICLE** — granular / broken electronics
 
-## GitHub Pages
-
-Upload all extracted files to the **root** of your repository. In **Settings → Pages**, select **Deploy from a branch**, **main / (root)** and **Save**. Open the published URL in Safari; optionally add it to your Home Screen.
-
-The photo stays on your device. No external sound files, API keys, or cloud processing are required. iPhone Safari performance and export behavior should be tested on your device.
+## Notes
+- Processing happens locally in the browser.
+- For iPhone, publish on GitHub Pages over HTTPS.
+- Sound is rendered in-browser and exported as WAV.
