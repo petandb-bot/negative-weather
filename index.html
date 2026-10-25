@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111514" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="description" content="A photograph becomes a temporary sound world." />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./assets/icon-192.png" />
+  <link rel="apple-touch-icon" href="./assets/icon-192.png" />
+  <link rel="stylesheet" href="./style.css" />
+  <title>NEGATIVE WEATHER — photograph to sound</title>
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <div class="brand">
+        <div class="brand-eyebrow"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span> FIELD RECORDS / 001</div>
+        <h1>NEGATIVE<br /><em>WEATHER</em></h1>
+      </div>
+      <div class="mast-side">PHOTO<br />→<br />SOUND</div>
+    </header>
+
+    <section class="art-frame" id="artFrame" aria-label="Animated photograph">
+      <canvas id="art" role="img" aria-label="Organic animated color photograph"></canvas>
+      <div class="empty-state" id="emptyState">
+        <div class="empty-sigil" aria-hidden="true">◌</div>
+        <p>THE IMAGE<br />IS NOT YET HERE</p>
+        <small>CAPTURE AN INSTANT / RELEASE ITS WEATHER</small>
+      </div>
+      <div class="corner-label top-left" id="photoLabel">NO IMAGE</div>
+      <div class="corner-label top-right" id="engineLabel">— / —</div>
+      <div class="corner-label bottom-left" id="seedLabel">FRAME: 0000</div>
+      <div class="corner-label bottom-right"><span id="statusDot" class="status-dot"></span><span id="stageLabel">STANDBY</span></div>
+      <div class="busy" id="busy" hidden><span class="busy-spinner"></span><span id="busyText">READING LIGHT</span></div>
+    </section>
+
+    <section class="readout" aria-live="polite">
+      <div class="readout-primary">
+        <span class="readout-kicker">CURRENT CONDITION</span>
+        <strong id="conditionLabel">UNFORMED</strong>
+      </div>
+      <div class="readout-meta">
+        <span id="detailLabel">—</span><span id="durationLabel">00:00</span>
+      </div>
+    </section>
+    <div class="track" aria-hidden="true"><span id="progressBar"></span></div>
+
+    <section class="controls" aria-label="Main controls">
+      <button class="control control-primary" id="shootBtn" type="button"><span class="control-icon">◎</span>SHOOT</button>
+      <button class="control" id="mutateBtn" type="button" disabled><span class="control-icon">⟳</span>MUTATE</button>
+      <button class="control" id="playBtn" type="button" disabled><span class="control-icon" id="playIcon">▷</span><span id="playText">PLAY</span></button>
+      <button class="control" id="saveBtn" type="button" disabled><span class="control-icon">↓</span>SAVE</button>
+    </section>
+
+    <div class="footbar">
+      <button id="libraryBtn" class="text-button" type="button">↗ USE PHOTO LIBRARY</button>
+      <span class="version">v0.1 · CHROMATIC FIELD</span>
+    </div>
+    <p class="help" id="helpText">A photograph will generate a sound world and set it in motion.</p>
+  </main>
+
+  <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden />
+  <input id="libraryInput" type="file" accept="image/*" hidden />
+
+  <div class="modal" id="saveModal" hidden>
+    <div class="modal-shade" id="modalShade"></div>
+    <div class="modal-content" role="dialog" aria-modal="true" aria-label="Save output">
+      <span class="modal-kicker">EXPORT THE WEATHER</span>
+      <button type="button" id="saveWavBtn">SOUND <small>WAV / 22.05 KHZ</small></button>
+      <button type="button" id="savePngBtn">IMAGE <small>PNG / CURRENT FRAME</small></button>
+      <button type="button" id="closeModal" class="modal-close">CANCEL</button>
+    </div>
+  </div>
+
+  <script src="./audio-engine.js"></script>
+  <script src="./visual-engine.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
