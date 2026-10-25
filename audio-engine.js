@@ -17,60 +17,106 @@
     pick(arr){return arr[Math.floor(this.next()*arr.length)];}
     chance(v){return this.next()<v;}
   }
+  // 写真を160pxへ縮小して、色・局所密度・方向性・空間的な偏りを抽出する。
+  // 被写体を機械学習で分類するのではなく、画像の構造そのものを楽曲の素性とする。
   function analyzeImage(img){
-    const s=160;
-    const c=document.createElement('canvas'); c.width=s;c.height=s;
-    const cx=c.getContext('2d',{willReadFrequently:true});
-    const scale=Math.max(s/img.width,s/img.height);
-    cx.drawImage(img,(s-img.width*scale)/2,(s-img.height*scale)/2,img.width*scale,img.height*scale);
-    const p=cx.getImageData(0,0,s,s).data;
-    const lum=new Float32Array(s*s);
-    let avg=0,sat=0,red=0,green=0,blue=0,left=0,right=0;
-    let hash=2166136261>>>0;
-    for(let y=0;y<s;y++)for(let x=0;x<s;x++){
-      const i=y*s+x,k=i*4,r=p[k]/255,g=p[k+1]/255,b=p[k+2]/255;
-      const l=.2126*r+.7152*g+.0722*b;lum[i]=l;avg+=l;
-      sat+=Math.max(r,g,b)-Math.min(r,g,b);
-      red+=r;green+=g;blue+=b;
-      if(x<s/2)left+=l;else right+=l;
+    const S=160, c=document.createElement('canvas'); c.width=c.height=S;
+    const ctx=c.getContext('2d',{willReadFrequently:true});
+    const scale=Math.max(S/img.width,S/img.height);
+    ctx.drawImage(img,(S-img.width*scale)/2,(S-img.height*scale)/2,img.width*scale,img.height*scale);
+    const p=ctx.getImageData(0,0,S,S).data;
+    const lum=new Float32Array(S*S), cells=new Float32Array(16), colorCells=new Float32Array(16);
+    let hash=2166136261>>>0,light=0,saturation=0,red=0,green=0,blue=0,left=0,right=0;
+    let hueX=0,hueY=0;
+    for(let y=0;y<S;y++)for(let x=0;x<S;x++){
+      const i=y*S+x,k=i*4,r=p[k]/255,g=p[k+1]/255,b=p[k+2]/255;
+      const l=.2126*r+.7152*g+.0722*b;
+      const mx=Math.max(r,g,b),mn=Math.min(r,g,b),ch=mx-mn;
+      let hue=0;
+      if(ch>.0001){
+        if(mx===r)hue=((g-b)/ch)%6;
+        else if(mx===g)hue=(b-r)/ch+2;
+        else hue=(r-g)/ch+4;
+        hue=(hue/6+1)%1;
+        hueX+=Math.cos(hue*TAU)*ch;hueY+=Math.sin(hue*TAU)*ch;
+      }
+      lum[i]=l;light+=l;saturation+=ch;red+=r;green+=g;blue+=b;
+      if(x<S/2)left+=l;else right+=l;
+      const ci=(Math.floor(y/40))*4+Math.floor(x/40);cells[ci]+=l;colorCells[ci]+=ch;
       if(i%13===0){hash^=(p[k]+p[k+1]*3+p[k+2]*7)&255;hash=Math.imul(hash,16777619)>>>0;}
     }
-    avg/=s*s;sat/=s*s;red/=s*s;green/=s*s;blue/=s*s;
-    let edge=0,variance=0,highlights=0;
-    for(let y=1;y<s-1;y++)for(let x=1;x<s-1;x++){
-      const i=y*s+x;variance+=(lum[i]-avg)**2;
-      edge+=Math.abs(lum[i+1]-lum[i-1])*.5+Math.abs(lum[i+s]-lum[i-s])*.5;
-      if(lum[i]>.82)highlights++;
+    const size=S*S;light/=size;saturation/=size;red/=size;green/=size;blue/=size;
+    for(let i=0;i<16;i++){cells[i]/=1600;colorCells[i]/=1600;}
+    let e=0,variance=0,ex=0,ey=0,bright=0,blockVar=0;
+    const gridTexture=new Float32Array(16);
+    for(let y=1;y<S-1;y++)for(let x=1;x<S-1;x++){
+      const i=y*S+x,dx=Math.abs(lum[i+1]-lum[i-1])*.5,dy=Math.abs(lum[i+S]-lum[i-S])*.5;
+      const local=dx+dy;
+      variance+=(lum[i]-light)**2;e+=local;ex+=dx;ey+=dy;
+      if(lum[i]>.82)bright++;
+      gridTexture[(Math.floor(y/40))*4+Math.floor(x/40)]+=local;
     }
-    const pix=(s-2)*(s-2);
-    return {hash,light:avg,saturation:sat,contrast:Math.sqrt(variance/pix),
-      edge:clamp(edge/pix*2.4,0,1), balance:clamp((right-left)/(s*s*.5),-1,1),
-      highlights:highlights/pix,r:red,g:green,b:blue};
+    const inner=(S-2)*(S-2), contrast=Math.sqrt(variance/inner);
+    for(let i=0;i<16;i++){
+      gridTexture[i]=clamp(gridTexture[i]/1550*3,0,1);
+      blockVar+=(cells[i]-light)**2;
+    }
+    let textured=0;
+    for(let i=0;i<16;i++)textured+=(gridTexture[i]-e/inner*3)**2;
+    const edge=clamp(e/inner*2.4,0,1);
+    const orientation=clamp(Math.abs(ex-ey)/Math.max(ex+ey,.001),0,1);
+    const spatialContrast=clamp(Math.sqrt(blockVar/16)*2.5,0,1);
+    const colorDiversity=clamp(1-Math.hypot(hueX,hueY)/Math.max(saturation*size,.001),0,1);
+    const texture=clamp(edge*.50+Math.sqrt(textured/16)*.9+spatialContrast*.36,0,1);
+    const density=clamp(edge*.55+texture*.32+contrast*.6,0,1);
+    const openness=clamp(1-edge*.8-texture*.32,0,1);
+    const motion=clamp(density*.64+contrast*.52+saturation*.18,0,1);
+    return {hash,light,saturation,contrast,edge,texture,density,openness,motion,
+      orientation,spatialContrast,colorDiversity,
+      balance:clamp((right-left)/(size*.5),-1,1),highlights:bright/inner,
+      r:red,g:green,b:blue,cells:Array.from(cells),gridTexture:Array.from(gridTexture)};
   }
-  function chooseEngine(f,mutation){
-    // 初回は写真をもとに重み付け。再生成では4系統を循環させて差を保証。
-    if(mutation>0)return (chooseEngine(f,0)+mutation)%4;
-    const weights=[.8+f.light*.8+f.saturation*.45,
-      .45+f.edge*2.7+f.contrast*.9,
-      .75+(1-f.light)*.9,
-      .8+f.edge*1.1+f.saturation*.65];
-    const total=weights.reduce((a,b)=>a+b,0);
-    let v=((f.hash>>>0)/4294967296)*total;
-    for(let i=0;i<4;i++){v-=weights[i];if(v<=0)return i;}
+  // 写真の特徴量をエンジンの発生頻度へ変換。高スコアを強めることで
+  // 「この写真はこの世界に寄りやすい」という探索可能な偏りを作る。
+  function engineWeights(f){
+    const dark=1-f.light;
+    const raw=[
+      .20+2.4*f.openness+f.highlights*.6+f.light*.95,
+      .18+9.0*f.edge+1.4*f.orientation+f.contrast*.7+f.spatialContrast*.35,
+      (.24+2.8*dark+1.50*f.openness+f.spatialContrast*.35)*(1-f.edge*.73),
+      .20+5.0*f.texture+2.5*f.edge*(1-f.orientation)+f.colorDiversity*1.25+f.saturation*.55+Math.max(0,f.edge-.32)*9.0
+    ];
+    return raw.map(x=>Math.pow(x,5.0));
+  }
+  function chooseEngine(f,mutation=0){
+    const weights=engineWeights(f);
+    const rng=new Random((f.hash^Math.imul(mutation+1,0x9e3779b9))>>>0);
+    // MUTATEは写真の傾向を維持。約2割だけ他のエンジンも探りやすくする。
+    if(mutation>0&&rng.chance(.20))for(let i=0;i<4;i++)weights[i]=Math.sqrt(weights[i]);
+    let t=weights.reduce((a,b)=>a+b,0)*rng.next();
+    for(let i=0;i<4;i++){t-=weights[i];if(t<=0)return i;}
     return 3;
+  }
+  function imageBpm(f,engine,seed){
+    const ranges=[[56,88],[92,132],[40,72],[78,124]];
+    const [min,max]=ranges[engine];
+    const drive=clamp(.10+f.motion*.55+f.texture*.24+f.orientation*.13,0,1);
+    // 撮影した風景が持つ固有のテンポに、再生成時だけわずかな差を持たせる。
+    const r=new Random((f.hash^(seed>>>0)^0x71c48e21)>>>0);
+    return Math.round(clamp(min+(max-min)*drive+(r.next()-.5)*6,min,max));
   }
   const midiToHz=m=>440*Math.pow(2,(m-69)/12);
   const scales=[[0,2,3,7,9],[0,2,5,7,10],[0,3,5,7,10],[0,2,4,7,9]];
   class SoundWorld {
     constructor(f,engine,seed){
       this.f=f;this.engine=engine;this.seed=seed>>>0;this.rng=new Random(seed);
-      this.bpm=[this.rng.range(83,102),this.rng.range(116,142),this.rng.range(77,95),this.rng.range(96,122)][engine];
+      this.bpm=imageBpm(f,engine,seed);
       this.beat=60/this.bpm;
       this.duration=this.beat*32; // 8小節。エンジン別に異なる時間感覚。
       this.n=Math.ceil(this.duration*SR);
       this.left=new Float32Array(this.n);this.right=new Float32Array(this.n);
-      this.root=37+Math.round(f.r*3+f.b*4+f.g*2);
-      this.scale=scales[(Math.floor(f.saturation*13)+seed%4)%4];
+      this.root=36+Math.round(f.r*5+f.b*4+f.g*3+f.spatialContrast*3);
+      this.scale=scales[(Math.floor((f.saturation*.65+f.colorDiversity*.35)*13)+((seed>>>6)%4))%4];
     }
     note(degree,octave=0){
       const len=this.scale.length;
@@ -139,7 +185,7 @@
         }
       }
       for(let k=0;k<26;k++){
-        if(!r.chance(.62+f.highlights*.3))continue;
+        if(!r.chance(.35+f.highlights*.4+f.texture*.18))continue;
         const at=r.range(.2,this.duration-1.0),d=r.pick([2,3,4,7]);
         this.addTone(this.note(d,2),at,r.range(.3,.88),r.range(.014,.043),'glass',r.range(-.8,.8),{attack:.025,release:.25,mod:.4});
       }
@@ -150,12 +196,12 @@
       const phrase=[0,2,0,3,1,2,4,1];
       for(let beat=0;beat<32;beat++){
         const t=beat*b;
-        if(beat%4===0||beat%4===2&&r.chance(.45))this.kick(t,.14+r.range(-.025,.025));
+        if(beat%4===0||beat%4===2&&r.chance(.25+f.cells[beat%16]*.42))this.kick(t,.14+r.range(-.025,.025));
         if(beat%4===1||beat%4===3&&r.chance(.7))this.addNoise(t,.10,.076,'hat',r.range(-.2,.2));
-        if(r.chance(.22+f.edge*.37))this.addNoise(t+b*.52,.044,.047,'hat',r.range(-.9,.9));
+        if(r.chance(.12+f.texture*.5+f.gridTexture[beat%16]*.24))this.addNoise(t+b*.52,.044,.047,'hat',r.range(-.9,.9));
         // ピッチを持った反復リフがクリック群をまとめる。
         const pos=beat%8;
-        if(pos!==3&&r.chance(.82)){
+        if(pos!==3&&r.chance(.58+f.cells[(beat+7)%16]*.35)){
           this.addTone(this.note(phrase[pos],0),t+.013,b*r.range(.35,.72),r.range(.08,.125),'fm',r.range(-.4,.4),{release:.13,mod:.45});
         }
         if(pos===7&&r.chance(.7))this.addTone(this.note(4,2),t+b*.66,b*.25,.035,'ping',r.range(-1,1),{release:.055});
@@ -190,7 +236,7 @@
       for(let bar=0;bar<8;bar++){
         const offset=bar*4*b;
         for(let ix=0;ix<16;ix++){
-          if(!r.chance(.4+f.edge*.32))continue;
+          if(!r.chance(.23+f.texture*.44+f.gridTexture[ix%16]*.24))continue;
           const at=offset+ix*b*.25+r.range(-.025,.028);
           const d=motif[ix%motif.length];
           this.addTone(this.note(d,1+r.pick([0,1])),at,r.range(.055,.30),r.range(.035,.095),'glass',r.range(-1,1),{attack:.002,release:.055,glide:r.range(-2,2),mod:r.range(.1,.8)});
@@ -262,5 +308,5 @@
     }
     return new Blob([arr],{type:'audio/wav'});
   }
-  root.NWAudio={analyzeImage,chooseEngine,synthesize,makeBuffer,encodeWav,ENGINES};
+  root.NWAudio={analyzeImage,engineWeights,chooseEngine,imageBpm,synthesize,makeBuffer,encodeWav,ENGINES};
 })(window);

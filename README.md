@@ -1,22 +1,18 @@
 # NEGATIVE WEATHER
 
-A photograph becomes a temporary sound world.
+A photograph becomes a changing sound world.
 
 ## Use
 
-1. Open the site on your phone.
-2. Tap **SHOOT** to take a photo, or **USE PHOTO LIBRARY** to select one.
-3. A sound world and an animated color photograph are generated automatically.
-4. Tap **PLAY** to listen and **MUTATE** to create a new variation from the same photo.
-5. Tap **SAVE** to export a WAV recording or PNG image.
+1. Tap **SHOOT** to take a photo, or **USE PHOTO LIBRARY** to select an image.
+2. The photo determines the likely sound engine, tempo, and animation character.
+3. Tap **PLAY** to hear the loop. Tap **MUTATE** for another result from the same photo.
+4. Tap **SAVE** to export WAV audio or a PNG of the current frame.
 
-## Publish on GitHub Pages
+Each photo favors certain results, but unexpected variations are possible. VEIL, PULSE, CURRENT, and PARTICLE use different musical structures. The BPM displayed is a generated tempo derived from image features, not a measurement of movement in the photograph.
 
-1. Upload all project files to the root of a GitHub repository.
-2. Open **Settings → Pages**.
-3. Choose **Deploy from a branch**, then **main / (root)**, and save.
-4. Open the published URL in Safari. Add it to your Home Screen if desired.
+## GitHub Pages
 
-The four sound engines are VEIL, PULSE, CURRENT, and PARTICLE. Images and audio are processed locally. No server or API key is required.
+Upload all extracted files to the **root** of your repository. In **Settings → Pages**, select **Deploy from a branch**, **main / (root)** and **Save**. Open the published URL in Safari; optionally add it to your Home Screen.
 
-This is a prototype. Camera handling, audio playback, export, and performance should be checked on the target iPhone before release.
+The photo stays on your device. No external sound files, API keys, or cloud processing are required. iPhone Safari performance and export behavior should be tested on your device.

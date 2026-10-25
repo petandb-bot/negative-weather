@@ -88,13 +88,15 @@
       const seed=(features.hash^Math.imul(mutation+1,0x9e3779b9))>>>0;
       const result=window.NWAudio.synthesize(features,engine,seed);
       if(result.left.length!==result.right.length||!result.left.every(Number.isFinite))throw Error('Invalid audio');
-      world=result;renderer.setMood(engine,seed);renderer.playing=false;
+      world=result;renderer.setMood(engine,seed,features,result.bpm);renderer.playing=false;
       ui.condition.textContent=result.name;
       ui.engine.textContent=`${String(engine+1).padStart(2,'0')} / 04`;
-      ui.detail.textContent=engine===1||engine===3?`${result.bpm} BPM`:'GENERATIVE AUDIO';
+      // これは写真の動きを推定した「生成BPM」であり、実際の被写体の速度推定ではない。
+      const character=features.texture>.40?'DENSE':features.openness>.74?'OPEN':features.light<.28?'DARK':'MIXED';
+      ui.detail.textContent=`${result.bpm} BPM · ${character}`;
       ui.duration.textContent=formatTime(result.duration);
       ui.seed.textContent=`FRAME: ${String(seed%10000).padStart(4,'0')}`;
-      ui.help.textContent='Same image, new condition. MUTATE to generate another world.';
+      ui.help.textContent='Your image shapes the sound. MUTATE explores its possible weather.';
       ui.progress.style.width='0%';status('READY');
     }catch(err){console.error(err);showError('SOUND GENERATION FAILED');world=null;}
     finally {busy(false);}
