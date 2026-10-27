@@ -1,4 +1,4 @@
-# NEGATIVE WEATHER v0.4.1 — Eight Weathers
+# NEGATIVE WEATHER v0.4.3 — Lens Return
 
 A photograph becomes a temporary audiovisual weather system.
 
@@ -25,7 +25,7 @@ Upload all extracted files to the `main` branch root and enable **Settings → P
 
 Audio and images are processed locally in your browser. Performance on iPhone Safari may vary.
 
-## v0.4.1 — Image Events
+## v0.4.3 — Lens Return
 - Restored distinct animation behavior: drift, column, ripple, shutter, solvent, and afterimage.
 - Added an audio-aligned visual time base and four-stage evolution.
 - Reduced permanent lens overlays; colors and deformations emerge selectively.
@@ -36,3 +36,9 @@ Audio and images are processed locally in your browser. Performance on iPhone Sa
 Checked in a desktop Chromium mock-browser flow: image loading, all six motion recipes,
 PLAY, changing visual frames, WAV export, and 320px layout. iPhone Safari performance
 and visual quality still require testing on the device.
+
+
+## What changed in v0.4.3
+- Removed rectangular / box-like light animation shapes
+- Replaced column, shutter and afterimage masks with organic ribbons and blobs
+- Allowed stronger photo mutation while keeping the 8 audio engines
