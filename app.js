@@ -17,7 +17,7 @@
   let currentBlobUrl=null, generating=false;
   const nextFrame=()=>new Promise(resolve=>requestAnimationFrame(resolve));
   const formatTime=s=>`${Math.floor(s/60).toString().padStart(2,'0')}:${Math.floor(s%60).toString().padStart(2,'0')}`;
-  const statuses=['VEIL','PULSE','CURRENT','PARTICLE'];
+  const statuses=window.NWAudio.ENGINES;
   function status(label,playing=false){ ui.stage.textContent=label; ui.dot.classList.toggle('on',playing); }
   function busy(on,label='READING LIGHT'){
     generating=on; ui.busy.hidden=!on; ui.busyText.textContent=label;
@@ -54,7 +54,7 @@
       // 描画エンジンの初期化が失敗しても、旧メッセージを残さない。
       ui.empty.hidden=true; ui.empty.style.display='none';
       ui.photo.textContent='CAPTURED LIGHT';
-      renderer.setMood(0,features.hash,features,100);
+      renderer.setMood(0,features.hash,features,100,0);
       renderer.setPhoto(c);
       await generate();
     }catch(err){ console.error(err); showError('IMAGE COULD NOT BE OPENED. TRY A JPEG OR PNG.'); }
@@ -67,14 +67,14 @@
       const engine=window.NWAudio.chooseEngine(features,mutation);
       const seed=(features.hash^Math.imul(mutation+1,0x9e3779b9))>>>0;
       const result=window.NWAudio.synthesize(features,engine,seed);
-      world=result; renderer.setMood(engine,seed,features,result.bpm); renderer.playing=false;
+      world=result; renderer.setMood(engine,seed,features,result.bpm,mutation); renderer.playing=false;
       ui.condition.textContent=`${result.name} / ${result.variant}`;
-      ui.engine.textContent=`${String(engine+1).padStart(2,'0')} / 04`;
+      ui.engine.textContent=`${String(engine+1).padStart(2,'0')} / 08`;
       const character=features.texture>.48?'DENSE':features.openness>.72?'OPEN':features.light<.30?'DARK':'MIXED';
       ui.detail.textContent=`${result.bpm} BPM · ${character} · ${statuses[engine]}`;
       ui.duration.textContent=formatTime(result.duration);
       ui.seed.textContent=`FRAME: ${String(seed%10000).padStart(4,'0')}`;
-      ui.help.textContent='Lens-like color drift and patch motion now respond more strongly to the generated sound.';
+      ui.help.textContent='Eight sound engines, six motion styles. MUTATE explores another weather.';
       ui.progress.style.width='0%'; status('READY');
     }catch(err){ console.error(err); showError('SOUND GENERATION FAILED'); world=null; }
     finally { busy(false); }

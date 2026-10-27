@@ -1,18 +1,26 @@
-# NEGATIVE WEATHER v0.3.2 — Visual Fix
+# NEGATIVE WEATHER v0.4 — Eight Weathers
 
-Photo-generated ambient, experimental beats, drone and color animation.
+A photograph becomes a temporary audiovisual weather system.
 
 ## Use
-1. **SHOOT** to capture a photo, or **USE PHOTO LIBRARY** to choose one.
-2. **MUTATE** to generate another sound world from the same photo.
-3. **PLAY / STOP** to control the loop.
-4. **SAVE** to export WAV or the current PNG frame.
+1. Tap **SHOOT** or **USE PHOTO LIBRARY**.
+2. Tap **PLAY** to hear the generated sound loop.
+3. Tap **MUTATE** to explore another sound and motion variation.
+4. Tap **SAVE** to export WAV audio or the current PNG frame.
 
-## Update
-Upload the extracted files to the root of your GitHub repository (`main` branch). Keep GitHub Pages set to `main / (root)`.
+## Eight sound engines
+- **VEIL** — Ambient harmonics
+- **PULSE** — Micro-rhythm
+- **CURRENT** — Slow drone
+- **PARTICLE** — Broken electronics
+- **RELAY** — Melodic echoes and responses
+- **RIFT** — Off-grid interlocking beats
+- **ASH** — Lo-fi noise and resonance
+- **ORBIT** — Phasing arpeggios
 
-## Fixes
-- Fixes a startup color error that froze the photograph animation.
-- Correctly removes the image placeholder after capture.
-- Reduces rendering load on mobile.
-- Keeps the current audio engines and visual style unchanged.
+Each photo biases the engine selection, BPM, pitch, and timing. Consecutive MUTATE results avoid repeating the same sound engine. Six visual motion behaviors remain available.
+
+## Publish
+Upload all extracted files to the `main` branch root and enable **Settings → Pages → main / (root)**.
+
+Audio and images are processed locally in your browser. Performance on iPhone Safari may vary.

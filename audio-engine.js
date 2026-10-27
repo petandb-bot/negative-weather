@@ -2,12 +2,16 @@
   'use strict';
   const SR = 22050;
   const TAU = Math.PI * 2;
-  const ENGINES = ['VEIL','PULSE','CURRENT','PARTICLE'];
+  const ENGINES = ['VEIL','PULSE','CURRENT','PARTICLE','RELAY','RIFT','ASH','ORBIT'];
   const VARIANTS = {
     VEIL:['AERIAL BLOOM','METAL GLASS','TAPE GLOW'],
     PULSE:['DRY GRID','FM STEP','LOW CIRCUIT'],
     CURRENT:['HUM FIELD','BELL DRIFT','LOW TIDE'],
-    PARTICLE:['DUST RAIN','BROKEN TOYS','GRAIN LOOP']
+    PARTICLE:['DUST RAIN','BROKEN TOYS','GRAIN LOOP'],
+    RELAY:['ECHO CHAMBER','CHIMING REPLY','FRAYED SIGNAL'],
+    RIFT:['OFF GRID','SOFT PRESSURE','FRACTURED DANCE'],
+    ASH:['TAPE DUST','RUSTED AIR','GHOST HISS'],
+    ORBIT:['INTERLOCK','CIRCULAR BELLS','MICRO ARPEGGIO']
   };
   const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
   const mix=(a,b,t)=>a+(b-a)*t;
@@ -76,33 +80,58 @@
     return { hash,light,saturation,contrast,edge,texture,openness,motion,orientation,spatialContrast,colorDiversity,hue,warm,cool,
       r:red,g:green,b:blue,balance:horizontalBias,verticalBias,highlights:bright/inner,cells:Array.from(cells),edgeCells:Array.from(edgeCells),satCells:Array.from(satCells),hueCells:Array.from(hueCells),palette };
   }
+  // 画像が持つ特徴を8つの「音楽的な習性」の選択確率へ変換する。
+  // 強い相関だけで決め打ちすると写真が変わっても似た結果になるため、
+  // 非ゼロの探索確率と前回のエンジンの回避を組み合わせる。
   function engineWeights(f){
     const dark=1-f.light;
+    const cellContrast=Math.sqrt(f.cells.reduce((v,x)=>v+(x-f.light)**2,0)/16);
     const raw=[
-      .18 + 2.5*f.openness + 1.2*f.highlights + .7*(1-f.edge) + .6*f.colorDiversity,
-      .18 + 3.9*f.edge + 1.4*f.orientation + .9*f.contrast + .7*f.satCells.reduce((a,b)=>a+b,0)/16,
-      .20 + 3.2*dark + 1.8*(1-f.edge) + .8*f.spatialContrast + .4*Math.abs(f.verticalBias),
-      .20 + 3.5*f.texture + 1.4*f.colorDiversity + .8*f.saturation + 1.1*(1-f.openness)
+      .35+1.65*f.openness+.95*f.highlights+.60*(1-f.edge)+.60*f.colorDiversity,       // VEIL
+      .30+2.80*f.edge+1.15*f.orientation+.90*f.contrast,                            // PULSE
+      .35+2.20*dark+1.45*(1-f.edge)+.95*f.spatialContrast,                         // CURRENT
+      .30+2.45*f.texture+1.00*f.colorDiversity+.90*f.saturation,                    // PARTICLE
+      .30+1.35*f.colorDiversity+1.25*f.highlights+.85*f.balance+.85*f.saturation,   // RELAY
+      .30+1.9*f.orientation+1.45*f.edge+1.15*f.spatialContrast+cellContrast,        // RIFT
+      .30+1.7*dark+1.10*f.texture+1.15*(1-f.saturation)+.6*f.cool,                 // ASH
+      .30+1.4*f.hue+1.35*f.saturation+1.2*f.openness+.80*f.colorDiversity          // ORBIT
     ];
-    return raw.map(x=>Math.pow(x,4.6));
+    // 画像からの偏りは維持するが、1系統の独占を防ぐ。
+    const powered=raw.map(v=>Math.pow(Math.max(.1,v),2.2));
+    const avg=powered.reduce((a,b)=>a+b,0)/powered.length;
+    return powered.map(v=>v+avg*.14);
   }
   function chooseEngine(f,mutation=0){
-    const weights=engineWeights(f).slice();
-    const rng=new Random((f.hash^Math.imul(mutation+1,0x9e3779b9))>>>0);
-    if(mutation>0 && rng.chance(.28)) for(let i=0;i<4;i++) weights[i]=Math.sqrt(weights[i]);
-    let t=weights.reduce((a,b)=>a+b,0)*rng.next();
-    for(let i=0;i<4;i++){ t-=weights[i]; if(t<=0) return i; }
-    return 3;
+    const base=engineWeights(f);
+    function sample(m,blocked=-1){
+      const r=new Random((f.hash^Math.imul(m+1,0x9e3779b9)^0x54c3a1b7)>>>0);
+      const w=base.map((x,i)=> i===blocked?0:x);
+      // 同じ写真では少し偏りを維持しつつ、ときどき探索範囲を広げる。
+      if(m>0&&r.chance(.24)) for(let i=0;i<w.length;i++)w[i]=Math.sqrt(w[i]);
+      let t=w.reduce((a,b)=>a+b,0)*r.next();
+      for(let i=0;i<w.length;i++){t-=w[i];if(t<=0)return i;}
+      return w.findIndex(v=>v>0);
+    }
+    const m=Math.max(0,Math.floor(mutation));
+    if(m===0)return sample(0);
+    // 再帰の深さを増やさず、HATCH履歴を同じ写真と番号から再現する。
+    let previous=sample(0);
+    for(let i=1;i<m;i++)previous=sample(i,previous);
+    return sample(m,previous);
   }
   function imageBpm(f,engine,seed){
-    const ranges=[[54,86],[88,136],[40,72],[76,128]][engine];
+    const ranges=[[54,86],[88,136],[40,72],[76,128],[64,108],[94,148],[45,82],[80,134]][engine];
     let drive;
-    if(engine===0) drive=clamp(.12 + f.saturation*.15 + (1-f.edge)*.5 + f.light*.12 + f.colorDiversity*.2,0,1);
-    else if(engine===1) drive=clamp(.15 + f.edge*.42 + f.texture*.22 + f.orientation*.12 + f.satCells.reduce((a,b)=>a+b,0)/16*.1,0,1);
-    else if(engine===2) drive=clamp(.10 + (1-f.light)*.4 + (1-f.edge)*.32 + f.spatialContrast*.1,0,1);
-    else drive=clamp(.14 + f.texture*.38 + f.colorDiversity*.16 + f.edge*.16,0,1);
+    if(engine===0)drive=.12+f.saturation*.15+(1-f.edge)*.5+f.light*.12+f.colorDiversity*.2;
+    else if(engine===1)drive=.15+f.edge*.42+f.texture*.22+f.orientation*.12;
+    else if(engine===2)drive=.10+(1-f.light)*.4+(1-f.edge)*.32+f.spatialContrast*.1;
+    else if(engine===3)drive=.14+f.texture*.38+f.colorDiversity*.16+f.edge*.16;
+    else if(engine===4)drive=.20+f.highlights*.22+f.colorDiversity*.30+f.saturation*.16;
+    else if(engine===5)drive=.24+f.edge*.29+f.orientation*.22+f.contrast*.15;
+    else if(engine===6)drive=.12+(1-f.light)*.32+f.texture*.22+(1-f.saturation)*.16;
+    else drive=.18+f.saturation*.29+f.hue*.18+f.openness*.22;
     const r=new Random((f.hash^seed^0x71c48e21)>>>0);
-    return Math.round(clamp(mix(ranges[0],ranges[1],drive)+(r.next()-.5)*8,ranges[0],ranges[1]));
+    return Math.round(clamp(mix(ranges[0],ranges[1],clamp(drive,0,1))+(r.next()-.5)*6,ranges[0],ranges[1]));
   }
   const scales=[[0,2,3,7,9],[0,2,5,7,10],[0,3,5,7,10],[0,2,4,7,9],[0,1,5,7,8]];
   const midiToHz=m=>440*Math.pow(2,(m-69)/12);
@@ -112,7 +141,7 @@
       this.variant=this.chooseVariant();
       this.name=ENGINES[this.engine]; this.variantName=VARIANTS[this.name][this.variant];
       this.bpm=imageBpm(f,engine,seed); this.beat=60/this.bpm;
-      this.duration=this.engine===2 ? this.beat*28 : this.beat*32;
+      this.duration=(this.engine===2||this.engine===6) ? this.beat*24 : this.beat*32;
       this.n=Math.ceil(this.duration*SR);
       this.left=new Float32Array(this.n); this.right=new Float32Array(this.n);
       this.root=36+Math.round(f.r*4+f.b*5+f.g*3+f.spatialContrast*3+f.hue*5);
@@ -134,10 +163,26 @@
         if(f.light<.32 && f.spatialContrast>.22) return 0;
         if(f.highlights>.12 || f.cool>f.warm) return 1;
         return 2;
-      }else{
+      }else if(this.engine===3){
         if(f.texture>.56 && f.edge>.32) return 0;
         if(f.colorDiversity>.50 || f.saturation>.38) return 1;
         return 2;
+      }else if(this.engine===4){
+        if(f.highlights>.14) return 1;
+        if(f.texture>.4) return 2;
+        return 0;
+      }else if(this.engine===5){
+        if(f.orientation>.4) return 0;
+        if(f.light<.38) return 1;
+        return 2;
+      }else if(this.engine===6){
+        if(f.saturation<.23) return 0;
+        if(f.edge>.35) return 1;
+        return 2;
+      }else{
+        if(f.hue>.47) return 1;
+        if(f.saturation>.36) return 2;
+        return 0;
       }
     }
     note(degree,oct=0){
@@ -150,6 +195,9 @@
       if(this.engine===1 && this.variant===2) return clamp(.14 + f.edge*.12 + f.texture*.10,0,.34);
       if(this.engine===2 && this.variant===0) return clamp(.08 + (1-f.light)*.10,0,.22);
       if(this.engine===3 && this.variant===1) return clamp(.18 + f.texture*.20 + f.colorDiversity*.10,0,.45);
+      if(this.engine===4 && this.variant===2) return clamp(.19+f.texture*.18,0,.41);
+      if(this.engine===6) return clamp(.27+f.texture*.18+(1-f.light)*.08,0,.53);
+      if(this.engine===5 && this.variant===2) return .15;
       return clamp(.02 + f.texture*.03,0,.08);
     }
     addEvent(time,low=0,mid=0,high=0,accent=0){ this.events.push({time,low,mid,high,accent}); }
@@ -299,6 +347,104 @@
       for(let i=0;i<4;i++) this.addTone(this.note([0,2,1,3][i],0),i*this.duration/4,this.duration/3,.03,'pad',r.range(-.8,.8),{attack:.9,release:1.2,bands:[.10,.30,.34]});
       if(v===1){ for(let i=0;i<10;i++) if(r.chance(.65)) this.addDust(r.range(0,this.duration-.18),r.range(.03,.16),r.range(.003,.007),r.range(-1,1)); }
     }
+    // RELAY: ディレイ音そのものを旋律として再構成。4小節の主題と空白に返事がある。
+    // 空間を埋めないため、連打を常時鳴らさず、応答のある場面を限定する。
+    relay(){
+      const r=this.rng,b=this.beat,f=this.f,v=this.variant;
+      const motif=Array.from({length:8},(_,i)=>Math.floor(f.cells[(i*2+3)%16]*9+f.hueCells[i]*5+f.edgeCells[i]*5)%7);
+      const count=v===0?5:v===1?7:4;
+      for(let cycle=0;cycle<4;cycle++){
+        const start=cycle*8*b;
+        for(let j=0;j<count;j++){
+          const x=j%8,baseTime=start+(x*1.25+(j%2)*.22)*b;
+          const degree=motif[(j+cycle)%8],note=this.note(degree,1);
+          const pan=(j%2===0?-.62:.62)*(.7+f.saturation*.4);
+          this.addTone(note,baseTime,b*(v===1?.42:.6),v===1?.063:.076,v===1?'glass':'soft',pan,
+            {attack:.014,release:.13,mod:.18+f.colorDiversity,bands:[.08,.45,.68]});
+          // 数回だけ後ろに小さな返答を足す。周波数は写真由来の音階から選択。
+          if(r.chance(.75)){
+            const taps=v===0?2:v===1?3:2;
+            for(let k=1;k<=taps;k++){
+              const t=baseTime+b*k*(v===2?.7:.50);
+              this.addTone(this.note(degree+(v===1?k:0),1),t,b*.24,.048*Math.pow(.54,k),v===1?'glass':'ping',-pan,
+                {attack:.004,release:.10,bands:[.07,.32,.78]});
+            }
+          }
+        }
+        // 主題の裏に小さなロングトーン。RELAYを単なるチャイム列にしない。
+        this.addTone(this.note(motif[cycle%8]-1,0),start+b*.8,5.8*b,.034,'pad',r.range(-.3,.3),
+          {attack:b*.8,release:b*1.1,bands:[.28,.45,.35]});
+      }
+    }
+    // RIFT: 定型四つ打ちでなく、3拍/5拍の長さが異なるモチーフを共存させる。
+    // 音の多さではなく、休符と位相のずれによってグルーヴを生む。
+    rift(){
+      const r=this.rng,b=this.beat,f=this.f,v=this.variant;
+      const pattern=v===0?[1,0,1,0,0,1,0,1,0,0]:v===1?[1,0,0,0,1,0,0,1,0,0]:[1,0,1,0,1,0,0,1,0,0];
+      for(let step=0;step<64;step++){
+        const time=step*b*.5;
+        const c=f.cells[(step*3)%16],e=f.edgeCells[(step*5)%16],s=f.satCells[(step*7)%16];
+        if(pattern[step%10] && r.chance(.50+.25*e)){
+          const note=Math.floor((c*7+e*8+s*6))%5;
+          const bass=step%8===0;
+          if(bass)this.kick(time,.10+e*.035);
+          this.addTone(this.note(note,bass?-1:0),time,b*(bass?.45:.23),bass?.075:.049,bass?'bass':'fm',r.range(-.5,.5),
+            {attack:.008,release:.12,mod:.25+s,bands:bass?[.85,.23,.04]:[.14,.65,.37]});
+        }
+        if(step%5===2 && r.chance(.32+s*.34))this.addNoise(time+b*.08,.035,.038,'hat',r.range(-.9,.9));
+        if(step%16===15 && r.chance(.55))this.addTone(this.note(4,2),time+b*.12,b*.21,.032,'ping',r.range(-.8,.8),{release:.07,bands:[.05,.24,.86]});
+      }
+      for(let i=0;i<4;i++)this.addTone(this.note([0,1,3,2][i],-1),i*8*b,6.2*b,.025,'drone',r.range(-.22,.22),
+        {attack:b*.7,release:b*1.2,bands:[.75,.20,.08]});
+    }
+    // ASH: 低サンプルレートのレコード/テープに似た薄い掠れと共鳴。
+    // 音程を持つ要素も残し、単なるホワイトノイズにしない。
+    ash(){
+      const r=this.rng,b=this.beat,f=this.f,v=this.variant;
+      for(let i=0;i<4;i++){
+        const t=i*6*b,deg=Math.round(f.cells[i*4]*8+f.hueCells[i*4]*2)%5;
+        this.addTone(this.note(deg,-1),t,5.9*b,.065,'drone',r.range(-.55,.55),{attack:b*.9,release:b*1.2,
+          mod:.3+f.texture,bands:[.68,.24,.13]});
+        if(i%2===0)this.addTone(this.note(deg+2,1),t+b*.8,3.6*b,.022,'soft',-r.range(-.7,.7),
+          {attack:b*.7,release:b*.9,bands:[.14,.55,.32]});
+      }
+      for(let i=0;i<16;i++){
+        const t=i*1.5*b;
+        this.addDust(t,Math.min(b*r.range(.35,1.25),this.duration-t),r.range(.0025,.008)*(1+f.texture*.5),r.range(-.95,.95));
+        if(r.chance(.23+f.edge*.3)){
+          this.addNoise(t+b*.25,Math.min(.2,this.duration-t-b*.25),.012+f.texture*.02,'air',r.range(-1,1));
+        }
+      }
+      if(v===1){
+        for(let i=0;i<9;i++){
+          const t=r.range(0,this.duration-1),d=r.range(.35,.95);
+          this.addTone(this.note(r.pick([0,2,4]),2),t,d,.024,'glass',r.range(-1,1),{attack:.02,release:.24,
+            bands:[.03,.23,.91]});
+        }
+      }
+    }
+    // ORBIT: 異なる周期の明るい音列が少しずつ位相をずらして交差する。
+    // ステップ列は写真16領域の明度・色・輪郭から作るため、写真ごとに違う旋律を得る。
+    orbit(){
+      const r=this.rng,b=this.beat,f=this.f,v=this.variant;
+      const seq=Array.from({length:16},(_,i)=>Math.floor(f.cells[i]*6+f.satCells[i]*8+f.edgeCells[i]*4)%6);
+      const offsets=[0,3,6];
+      for(let layer=0;layer<3;layer++){
+        const spacing=[.75,1.25,2.0][layer]*b;
+        const count=Math.ceil(this.duration/spacing);
+        for(let j=0;j<count;j++){
+          if(!r.chance((layer===0?.79:layer===1?.57:.42)+f.saturation*.10))continue;
+          const t=j*spacing+(layer===1?b*.28:layer===2?b*.37:0),degree=seq[(j*([1,3,5][layer])+offsets[layer])%16];
+          const amp=[.046,.039,.027][layer];
+          const kind=layer===0?(v===2?'fm':'ping'):layer===1?'glass':'soft';
+          this.addTone(this.note(degree+layer,layer===2?0:1),t,Math.min(spacing*(layer===2?1.4:.65),this.duration-t),amp,kind,
+            layer===0?-.55:layer===1?.6:r.range(-.25,.25),{attack:layer===2?.18:.008,release:layer===2?.46:.10,
+              mod:.2+f.saturation,bands:layer===2?[.26,.47,.23]:[.06,.39,.78]});
+        }
+      }
+      for(let i=0;i<4;i++)this.addTone(this.note(seq[i*4],-1),i*8*b,6*b,.027,'pad',r.range(-.4,.4),
+        {attack:b,release:b*1.0,bands:[.45,.35,.2]});
+    }
     applyLofi(){
       const l=this.lofiAmount||0; if(l<=0) return;
       const L=this.left, R=this.right, n=this.n, rng=new Random((this.seed^0x5a17e3b1)>>>0);
@@ -322,7 +468,7 @@
       this.applyLofi();
       let peak=0,sum=0;
       for(let i=0;i<n;i++){ peak=Math.max(peak,Math.abs(l[i]),Math.abs(r[i])); sum+=l[i]*l[i]+r[i]*r[i]; }
-      const rms=Math.sqrt(sum/(2*n)); const targets=[.094,.118,.093,.108], target=targets[this.engine];
+      const rms=Math.sqrt(sum/(2*n)); const targets=[.094,.118,.093,.108,.096,.109,.084,.104], target=targets[this.engine];
       const gain=Math.min(2.8,target/Math.max(rms,1e-5),.72/Math.max(peak,1e-5));
       for(let i=0;i<n;i++){ l[i]=Math.tanh(l[i]*gain*1.04)*.92; r[i]=Math.tanh(r[i]*gain*1.04)*.92; }
       const cross=Math.min(Math.floor(SR*.12),Math.floor(n/16));
@@ -348,7 +494,15 @@
   }
   function synthesize(features,engine,seed){
     const w=new SoundWorld(features,engine,seed);
-    if(engine===0) w.veil(); else if(engine===1) w.pulse(); else if(engine===2) w.current(); else w.particle();
+    if(engine===0) w.veil();
+    else if(engine===1) w.pulse();
+    else if(engine===2) w.current();
+    else if(engine===3) w.particle();
+    else if(engine===4) w.relay();
+    else if(engine===5) w.rift();
+    else if(engine===6) w.ash();
+    else if(engine===7) w.orbit();
+    else throw new Error('Invalid engine');
     return w.finish();
   }
   function makeBuffer(ctx,data){ const b=ctx.createBuffer(2,data.length,data.sampleRate); b.copyToChannel(data.left,0); b.copyToChannel(data.right,1); return b; }
