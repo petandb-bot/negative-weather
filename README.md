@@ -1,4 +1,4 @@
-# NEGATIVE WEATHER v0.4 — Eight Weathers
+# NEGATIVE WEATHER v0.4.1 — Eight Weathers
 
 A photograph becomes a temporary audiovisual weather system.
 
@@ -24,3 +24,15 @@ Each photo biases the engine selection, BPM, pitch, and timing. Consecutive MUTA
 Upload all extracted files to the `main` branch root and enable **Settings → Pages → main / (root)**.
 
 Audio and images are processed locally in your browser. Performance on iPhone Safari may vary.
+
+## v0.4.1 — Image Events
+- Restored distinct animation behavior: drift, column, ripple, shutter, solvent, and afterimage.
+- Added an audio-aligned visual time base and four-stage evolution.
+- Reduced permanent lens overlays; colors and deformations emerge selectively.
+- Adapted visual motion to the 8 sound engines without changing audio synthesis.
+- iPhone-friendly Canvas 2D rendering; no required network services.
+
+## Testing status
+Checked in a desktop Chromium mock-browser flow: image loading, all six motion recipes,
+PLAY, changing visual frames, WAV export, and 320px layout. iPhone Safari performance
+and visual quality still require testing on the device.

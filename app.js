@@ -67,14 +67,14 @@
       const engine=window.NWAudio.chooseEngine(features,mutation);
       const seed=(features.hash^Math.imul(mutation+1,0x9e3779b9))>>>0;
       const result=window.NWAudio.synthesize(features,engine,seed);
-      world=result; renderer.setMood(engine,seed,features,result.bpm,mutation); renderer.playing=false;
+      world=result; renderer.setMood(engine,seed,features,result.bpm,mutation,result.duration); renderer.playing=false;
       ui.condition.textContent=`${result.name} / ${result.variant}`;
       ui.engine.textContent=`${String(engine+1).padStart(2,'0')} / 08`;
       const character=features.texture>.48?'DENSE':features.openness>.72?'OPEN':features.light<.30?'DARK':'MIXED';
       ui.detail.textContent=`${result.bpm} BPM · ${character} · ${statuses[engine]}`;
       ui.duration.textContent=formatTime(result.duration);
       ui.seed.textContent=`FRAME: ${String(seed%10000).padStart(4,'0')}`;
-      ui.help.textContent='Eight sound engines, six motion styles. MUTATE explores another weather.';
+      ui.help.textContent='Eight sound engines. Images evolve through six distinct movements.';
       ui.progress.style.width='0%'; status('READY');
     }catch(err){ console.error(err); showError('SOUND GENERATION FAILED'); world=null; }
     finally { busy(false); }
