@@ -1,4 +1,4 @@
-# NEGATIVE WEATHER v0.3 — Chromatic Organism
+# NEGATIVE WEATHER v0.3.1 — Lens Drift
 
 A photograph becomes a temporary sound world.
 
@@ -26,3 +26,10 @@ A photograph becomes a temporary sound world.
 - Processing happens locally in the browser.
 - For iPhone, publish on GitHub Pages over HTTPS.
 - Sound is rendered in-browser and exported as WAV.
+
+
+## What changed in v0.3.1
+- Lens-like / oil-film color blobs
+- Occasional lo-fi and dusty texture in the audio
+- Stronger audio-linked visual reactions
+- Less uniform breathing motion

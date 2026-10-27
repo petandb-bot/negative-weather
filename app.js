@@ -68,7 +68,7 @@
       ui.detail.textContent=`${result.bpm} BPM · ${character} · ${statuses[engine]}`;
       ui.duration.textContent=formatTime(result.duration);
       ui.seed.textContent=`FRAME: ${String(seed%10000).padStart(4,'0')}`;
-      ui.help.textContent='Color drift and motion now react to the generated sound.';
+      ui.help.textContent='Lens-like color drift and patch motion now respond more strongly to the generated sound.';
       ui.progress.style.width='0%'; status('READY');
     }catch(err){ console.error(err); showError('SOUND GENERATION FAILED'); world=null; }
     finally { busy(false); }

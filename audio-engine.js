@@ -118,6 +118,7 @@
       this.root=36+Math.round(f.r*4+f.b*5+f.g*3+f.spatialContrast*3+f.hue*5);
       this.scale=scales[(Math.floor((f.saturation*.55+f.colorDiversity*.45)*17)+((seed>>>4)%scales.length))%scales.length];
       this.events=[];
+      this.lofiAmount=this.getLofiAmount();
     }
     chooseVariant(){
       const f=this.f, s=(this.seed>>>0);
@@ -143,7 +144,26 @@
       const len=this.scale.length, ix=((degree%len)+len)%len;
       return midiToHz(this.root+this.scale[ix]+Math.floor(degree/len)*12+oct*12);
     }
+    getLofiAmount(){
+      const f=this.f;
+      if(this.engine===0 && this.variant===2) return clamp(.24 + f.texture*.22 + (1-f.light)*.08,0,.52);
+      if(this.engine===1 && this.variant===2) return clamp(.14 + f.edge*.12 + f.texture*.10,0,.34);
+      if(this.engine===2 && this.variant===0) return clamp(.08 + (1-f.light)*.10,0,.22);
+      if(this.engine===3 && this.variant===1) return clamp(.18 + f.texture*.20 + f.colorDiversity*.10,0,.45);
+      return clamp(.02 + f.texture*.03,0,.08);
+    }
     addEvent(time,low=0,mid=0,high=0,accent=0){ this.events.push({time,low,mid,high,accent}); }
+    addDust(at,dur,amp,pan=0){
+      const a=Math.max(0,Math.floor(at*SR)), b=Math.min(this.n,Math.ceil((at+dur)*SR));
+      const l=Math.sqrt((1-pan)/2), r=Math.sqrt((1+pan)/2); let band=0;
+      this.addEvent(at,amp*.15,amp*.55,amp*.8,amp*.45);
+      for(let i=a;i<b;i++){
+        const t=(i-a)/SR, rem=(b-i)/SR, env=clamp(Math.min(t/.02,rem/.08,1),0,1);
+        const white=this.rng.range(-1,1); band=band*.72+white*.28;
+        const hiss=(white*.42 + band*.58)*amp*env;
+        this.left[i]+=hiss*l; this.right[i]+=hiss*r;
+      }
+    }
     addTone(freq,at,dur,amp,kind='soft',pan=0,opts={}){
       const begin=Math.max(0,Math.floor(at*SR)), end=Math.min(this.n,Math.floor((at+dur)*SR)); if(end<=begin) return;
       const attack=opts.attack ?? (kind==='pad'?0.4:kind==='drone'?1.2:0.006);
@@ -209,6 +229,7 @@
       }
       if(v===2){
         for(let i=0;i<8;i++) this.addNoise(i*this.duration/8,this.duration/8*1.3,.028,'air',Math.sin(i*.7));
+        for(let i=0;i<12;i++) if(r.chance(.55)) this.addDust(r.range(0,this.duration-.25),r.range(.08,.28),r.range(.0025,.006),r.range(-.8,.8));
       }
     }
     pulse(){
@@ -230,7 +251,10 @@
           if(step%4===1 && r.chance(.45)) this.addNoise(t+b*.48,.04,.03,'hat',r.range(-.8,.8));
         }
       }
-      if(v===2){ for(let bar=0; bar<8; bar+=2) this.addTone(this.note(bar%4?2:0,-1),bar*4*b,5*b,.032,'drone',-.12,{attack:b*.4,release:b*.65,bands:[.68,.22,.05]}); }
+      if(v===2){
+        for(let bar=0; bar<8; bar+=2) this.addTone(this.note(bar%4?2:0,-1),bar*4*b,5*b,.032,'drone',-.12,{attack:b*.4,release:b*.65,bands:[.68,.22,.05]});
+        for(let step=0; step<32; step+=2) if(r.chance(.46)) this.addDust(step*b+b*.45,.05,.0035 + f.texture*.0025,r.range(-.6,.6));
+      }
     }
     current(){
       const r=this.rng,b=this.beat,f=this.f,v=this.variant;
@@ -249,6 +273,7 @@
         }
       }
       for(let i=0;i<10;i++) this.addNoise(i*this.duration/10,this.duration/10*1.5,.03+f.edge*.02,'air',Math.sin(i*.9)*.7);
+      if(v===0 && r.chance(.75)) for(let i=0;i<6;i++) this.addDust(i*this.duration/6,this.duration/10,.0018 + (1-f.light)*.002,Math.sin(i));
     }
     particle(){
       const r=this.rng,b=this.beat,f=this.f,v=this.variant;
@@ -272,13 +297,31 @@
         if(bar%2===0 && v!==0) this.addTone(this.note(bar%3,0),offset+2*b,b*1.05,.055,'pad',r.range(-.7,.7),{attack:.18,release:.38,bands:[.12,.35,.35]});
       }
       for(let i=0;i<4;i++) this.addTone(this.note([0,2,1,3][i],0),i*this.duration/4,this.duration/3,.03,'pad',r.range(-.8,.8),{attack:.9,release:1.2,bands:[.10,.30,.34]});
+      if(v===1){ for(let i=0;i<10;i++) if(r.chance(.65)) this.addDust(r.range(0,this.duration-.18),r.range(.03,.16),r.range(.003,.007),r.range(-1,1)); }
+    }
+    applyLofi(){
+      const l=this.lofiAmount||0; if(l<=0) return;
+      const L=this.left, R=this.right, n=this.n, rng=new Random((this.seed^0x5a17e3b1)>>>0);
+      const hold=1+Math.floor(2+l*7), mixAmt=.08 + l*.16, hiss=.0008 + l*.0035, blur=.04 + l*.12;
+      let holdL=0, holdR=0, prevL=0, prevR=0;
+      for(let i=0;i<n;i++){
+        if(i%hold===0){ holdL=L[i]; holdR=R[i]; }
+        const flutter=1 + Math.sin(i*0.00075 + this.f.hue*TAU)*(.004 + l*.012) + Math.sin(i*0.00017 + this.f.saturation*3)*(.002 + l*.008);
+        let xL=mix(L[i],holdL,mixAmt)*flutter, xR=mix(R[i],holdR,mixAmt)*flutter;
+        const noise=(rng.next()*2-1)*hiss*(.5 + .5*Math.abs(xL+xR));
+        xL += noise; xR += noise*.9;
+        prevL += (xL-prevL)*blur; prevR += (xR-prevR)*blur;
+        L[i]=mix(xL,prevL,l*.55); R[i]=mix(xR,prevR,l*.55);
+      }
     }
     finish(){
-      const l=this.left, r=this.right, n=this.n; let prevL=0,prevR=0,yL=0,yR=0,peak=0,sum=0;
+      const l=this.left, r=this.right, n=this.n; let prevL=0,prevR=0,yL=0,yR=0;
       for(let i=0;i<n;i++){
         const xL=l[i], xR=r[i]; yL=.992*(yL+xL-prevL); yR=.992*(yR+xR-prevR); prevL=xL; prevR=xR; l[i]=yL; r[i]=yR;
-        peak=Math.max(peak,Math.abs(yL),Math.abs(yR)); sum+=yL*yL+yR*yR;
       }
+      this.applyLofi();
+      let peak=0,sum=0;
+      for(let i=0;i<n;i++){ peak=Math.max(peak,Math.abs(l[i]),Math.abs(r[i])); sum+=l[i]*l[i]+r[i]*r[i]; }
       const rms=Math.sqrt(sum/(2*n)); const targets=[.094,.118,.093,.108], target=targets[this.engine];
       const gain=Math.min(2.8,target/Math.max(rms,1e-5),.72/Math.max(peak,1e-5));
       for(let i=0;i<n;i++){ l[i]=Math.tanh(l[i]*gain*1.04)*.92; r[i]=Math.tanh(r[i]*gain*1.04)*.92; }
@@ -300,7 +343,7 @@
         envelope[i]=clamp(envelope[i]/Math.max(mx,.0001)*.9,0,1);
         low[i]=clamp(low[i]/Math.max(lmx,.0001),0,1); mid[i]=clamp(mid[i]/Math.max(mmx,.0001),0,1); high[i]=clamp(high[i]/Math.max(hmx,.0001),0,1); hit[i]=clamp(hit[i]/Math.max(amx,.0001),0,1);
       }
-      return { sampleRate:SR,length:n,duration:this.duration,bpm:Math.round(this.bpm),engine:this.engine,name:this.name,variant:this.variantName,left:l,right:r,envelope,low,mid,high,hit,seed:this.seed };
+      return { sampleRate:SR,length:n,duration:this.duration,bpm:Math.round(this.bpm),engine:this.engine,name:this.name,variant:this.variantName,left:l,right:r,envelope,low,mid,high,hit,seed:this.seed,lofi:this.lofiAmount };
     }
   }
   function synthesize(features,engine,seed){
