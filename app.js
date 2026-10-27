@@ -49,7 +49,13 @@
       const maxSide=1600, scale=Math.min(1,maxSide/Math.max(image.naturalWidth,image.naturalHeight));
       const c=document.createElement('canvas'); c.width=Math.max(1,Math.round(image.naturalWidth*scale)); c.height=Math.max(1,Math.round(image.naturalHeight*scale));
       const g=c.getContext('2d',{alpha:false}); g.drawImage(image,0,0,c.width,c.height);
-      photo=c; features=window.NWAudio.analyzeImage(c); mutation=0; renderer.setPhoto(c); ui.empty.hidden=true; ui.photo.textContent='CAPTURED LIGHT';
+      photo=c; features=window.NWAudio.analyzeImage(c); mutation=0;
+      // ロード成功が確定したらプレースホルダーを先に消す。
+      // 描画エンジンの初期化が失敗しても、旧メッセージを残さない。
+      ui.empty.hidden=true; ui.empty.style.display='none';
+      ui.photo.textContent='CAPTURED LIGHT';
+      renderer.setMood(0,features.hash,features,100);
+      renderer.setPhoto(c);
       await generate();
     }catch(err){ console.error(err); showError('IMAGE COULD NOT BE OPENED. TRY A JPEG OR PNG.'); }
     finally { busy(false); }

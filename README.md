@@ -1,35 +1,18 @@
-# NEGATIVE WEATHER v0.3.1 — Lens Drift
+# NEGATIVE WEATHER v0.3.2 — Visual Fix
 
-A photograph becomes a temporary sound world.
+Photo-generated ambient, experimental beats, drone and color animation.
 
 ## Use
-1. Tap **SHOOT** to capture a photo, or **USE PHOTO LIBRARY** to load one.
-2. The app analyzes the image and generates one of four sound engines.
-3. Tap **PLAY** to hear the loop.
-4. Tap **MUTATE** to generate another version from the same image.
-5. Tap **SAVE** to export **WAV** or the current **PNG** frame.
+1. **SHOOT** to capture a photo, or **USE PHOTO LIBRARY** to choose one.
+2. **MUTATE** to generate another sound world from the same photo.
+3. **PLAY / STOP** to control the loop.
+4. **SAVE** to export WAV or the current PNG frame.
 
-## What changed in v0.3
-- Stronger photo-dependent sound character
-- More internal variation inside each engine
-- BPM is shaped by the image
-- Color animation now shifts over time
-- Visual motion reacts to generated sound events
+## Update
+Upload the extracted files to the root of your GitHub repository (`main` branch). Keep GitHub Pages set to `main / (root)`.
 
-## Engines
-- **VEIL** — ambient / harmonic bloom
-- **PULSE** — experimental beat / micro rhythm
-- **CURRENT** — drone / slow modulation
-- **PARTICLE** — granular / broken electronics
-
-## Notes
-- Processing happens locally in the browser.
-- For iPhone, publish on GitHub Pages over HTTPS.
-- Sound is rendered in-browser and exported as WAV.
-
-
-## What changed in v0.3.1
-- Lens-like / oil-film color blobs
-- Occasional lo-fi and dusty texture in the audio
-- Stronger audio-linked visual reactions
-- Less uniform breathing motion
+## Fixes
+- Fixes a startup color error that froze the photograph animation.
+- Correctly removes the image placeholder after capture.
+- Reduces rendering load on mobile.
+- Keeps the current audio engines and visual style unchanged.

@@ -7,20 +7,24 @@
       this.ctx=canvas.getContext('2d',{willReadFrequently:true});
       this.image=null; this.basePhoto=null; this.sourcePixels=null; this.framePixels=null;
       this.energy=0; this.engine=0; this.seed=.5; this.t=0; this.playing=false; this.bpm=100;
-      this.features={motion:.4,palette:[[.45,.5,.5],[.2,.7,.8],[.8,.3,.5]]};
+      this.features={motion:.4,hue:0,saturation:0,warm:0,cool:0,palette:[[.45,.5,.5],[.2,.7,.8],[.8,.3,.5]]};
       this.audio={env:0,low:0,mid:0,high:0,hit:0,phase:0}; this.hasPhoto=false;
-      this.lastDraw=0; this.eventPulse=0; this.prevHit=0;
+      this.lastDraw=0; this.eventPulse=0; this.prevHit=0; this.lastRenderError=null;
       this.resize(); window.addEventListener('resize',()=>this.resize(),{passive:true});
       requestAnimationFrame(t=>this.frame(t));
     }
     resize(){
       const box=this.canvas.getBoundingClientRect(); if(!box.width||!box.height) return;
-      const scale=Math.min(window.devicePixelRatio||1,1.25,520/Math.max(box.width,box.height));
+      const scale=Math.min(window.devicePixelRatio||1,1.10,430/Math.max(box.width,box.height));
       this.canvas.width=Math.max(1,Math.round(box.width*scale)); this.canvas.height=Math.max(1,Math.round(box.height*scale));
       if(this.image) this.prepare2D();
-      if(this.hasPhoto) this.render();
+      if(this.hasPhoto) this.safeRender();
     }
-    setPhoto(image){ this.image=image; this.hasPhoto=true; this.prepare2D(); this.render(); }
+    setPhoto(image){
+      this.image=image; this.hasPhoto=true; this.prepare2D();
+      // 写真の登録は描画エラーから独立させる。初期化前でも静止画を表示できる。
+      this.safeRender();
+    }
     prepare2D(){
       if(!this.ctx||!this.image) return;
       const w=this.canvas.width,h=this.canvas.height;
@@ -30,7 +34,11 @@
       g.drawImage(this.image,(w-this.image.width*scale)/2,(h-this.image.height*scale)/2,this.image.width*scale,this.image.height*scale);
       this.basePhoto=src; this.sourcePixels=g.getImageData(0,0,w,h).data; this.framePixels=this.ctx.createImageData(w,h);
     }
-    setMood(index,seed,features={},bpm=100){ this.engine=index; this.seed=(seed%100000)/100000; this.features=features; this.bpm=bpm; this.t=0; this.eventPulse=0; this.prevHit=0; this.render(); }
+    setMood(index,seed,features={},bpm=100){
+      this.engine=index; this.seed=(seed%100000)/100000;
+      this.features={hue:0,saturation:0,warm:0,cool:0,...features};
+      this.bpm=bpm; this.t=0; this.eventPulse=0; this.prevHit=0; this.safeRender();
+    }
     setAudioState(state){
       const next=state||this.audio;
       const hit=next.hit||0;
@@ -39,11 +47,11 @@
       this.audio=next; this.energy=next?.env||0;
     }
     frame(stamp){
-      const interval=70; // low-ish fps for early-computer movement
+      const interval=86; // iPhoneでは負荷を抑え、約12fpsで描画する
       if(!this.lastDraw || stamp-this.lastDraw>=interval){
-        const elapsed=this.lastDraw?Math.min((stamp-this.lastDraw)/1000,.12):0; this.lastDraw=stamp;
+        const elapsed=this.lastDraw?Math.min((stamp-this.lastDraw)/1000,.75):0; this.lastDraw=stamp;
         this.eventPulse*=Math.pow(.08,elapsed*3.2);
-        this.t += elapsed*(this.playing?1:.34); this.render();
+        this.t += elapsed*(this.playing?1:.34); this.safeRender();
       }
       requestAnimationFrame(t=>this.frame(t));
     }
@@ -93,101 +101,107 @@
       ctx.restore();
     }
     render(){
-      if(!this.hasPhoto||!this.sourcePixels||!this.framePixels) return; this.render2D();
+      if(!this.hasPhoto||!this.sourcePixels||!this.framePixels) return;
+      this.render2D();
+    }
+    safeRender(){
+      if(!this.hasPhoto) return;
+      try{
+        this.render(); this.lastRenderError=null;
+      }catch(err){
+        // iOS側で一部のCanvas表現が失敗しても、写真表示と次フレームは止めない。
+        if(!this.lastRenderError || this.lastRenderError!==String(err)) console.warn('Visual fallback:',err);
+        this.lastRenderError=String(err);
+        if(this.basePhoto && this.ctx){
+          this.ctx.save(); this.ctx.filter='none'; this.ctx.globalAlpha=1;
+          this.ctx.globalCompositeOperation='source-over';
+          this.ctx.drawImage(this.basePhoto,0,0,this.canvas.width,this.canvas.height);
+          this.ctx.restore();
+        }
+      }
     }
     render2D(){
-      const ctx=this.ctx,w=this.canvas.width,h=this.canvas.height,src=this.sourcePixels,dst=this.framePixels.data;
-      const mode=this.engine,t=this.t,clock=(mode===1||mode===3)?Math.floor(t*10)/10:t, beat=t*this.bpm/60;
-      const env=this.audio.env||0, low=this.audio.low||0, mid=this.audio.mid||0, high=this.audio.high||0, hit=this.audio.hit||0;
-      const pulse=this.eventPulse||0;
-      const cell=18,gw=Math.ceil(w/cell)+2,gh=Math.ceil(h/cell)+2, patches=this.makePatches();
-      const dx=new Float32Array(gw*gh), dy=new Float32Array(gw*gh);
-      const amount=[20,28,24,26][mode]*(1+env*.22+hit*.18+pulse*.35) + (mode===1?high*4:0);
-      const hueDrift=(t*12 + high*65 + pulse*120 + this.features.hue*180) % 360;
-      for(let gy=0;gy<gh;gy++) for(let gx=0;gx<gw;gx++){
-        const x=gx*cell/w,y=gy*cell/h,i=gy*gw+gx;
-        let vx=.30*Math.sin(y*8.9+clock*.55+this.seed*8)+.20*Math.cos(x*6.2-clock*.42+high*3+pulse*4);
-        let vy=.26*Math.cos(x*7.5-clock*.47+mid*.8)+.24*Math.sin(y*8.1+clock*.5+low*2+pulse*3);
-        for(const p of patches){
-          const rr=Math.hypot((x-p.x)/p.rx,(y-p.y)/p.ry), a=clamp((1.14-rr)/.58,0,1), soft=a*a*(3-2*a);
-          vx+=soft*Math.sin(clock*(.45+p.x)+p.phase+mid*2)*.88; vy+=soft*Math.cos(clock*(.48+p.y)+p.phase+high*3)*.75;
-        }
-        if(mode===1){ vx += .42*Math.sin(Math.floor(y*11+this.seed*7)+Math.floor(beat*2+hit*2+pulse*4)*.6); vy += .10*Math.sin(x*13+clock*2+high*4); }
-        if(mode===2){ vx += .14*Math.sin(y*10+clock*.7+low) + .20*Math.sin((x+y)*4+pulse*8); vy += .30*Math.cos(x*7-clock*.4+mid) + .08*Math.cos(y*14+t*2); }
-        if(mode===3){ vx += .26*Math.sin(Math.floor(clock*8)+x*20+high*4+pulse*7); vy += .20*Math.cos(Math.floor(clock*6)+y*16+high*3+pulse*5); }
-        dx[i]=vx*amount; dy[i]=vy*amount;
+      const ctx=this.ctx;
+      const w=this.canvas.width,h=this.canvas.height;
+      const photo=this.basePhoto;
+      if(!photo) return;
+      const mode=this.engine,t=this.t,beat=t*this.bpm/60;
+      const env=this.audio.env||0,low=this.audio.low||0,mid=this.audio.mid||0;
+      const high=this.audio.high||0,hit=this.audio.hit||0,pulse=this.eventPulse||0;
+      const hueDrift=(t*13+high*65+pulse*120+(Number(this.features.hue)||0)*180)%360;
+      const patches=this.makePatches();
+      const jump=hit*.45+pulse*.55;
+      const amount=[18,30,25,27][mode]*(1+env*.23+jump*.32);
+
+      // ネイティブ描画を中心に再構成。毎フレーム全画素をJavaScriptで走査しない。
+      // iPhone Safariでの描画負荷を大幅に軽減し、音のアタックにも追従しやすくする。
+      ctx.save();
+      ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over'; ctx.filter='none';
+      ctx.clearRect(0,0,w,h);
+      ctx.drawImage(photo,0,0,w,h);
+
+      // 写真の層を少数の不均一な帯でずらす。音響エンジンごとに動きの周期を変える。
+      const strips=[5,13,7,11][mode];
+      for(let i=0;i<strips;i++){
+        const y0=Math.floor(i*h/strips),y1=Math.ceil((i+1)*h/strips);
+        const sh=Math.min(h-y0,y1-y0+1);
+        const clock=(mode===1||mode===3)?Math.floor(t*(mode===1?11:8))/(mode===1?11:8):t;
+        const wave=Math.sin(i*1.31+clock*(mode===2?.55:1.08)+this.seed*10);
+        const step=mode===1?Math.round(wave*amount*(i%3===0?1:.6)):
+          mode===3?Math.round((Math.sin(i*2.3+clock*.6)+Math.sin(clock*2+i*.9)*.35)*amount*.7):
+          Math.round(wave*amount*.72);
+        const rise=mode===2?Math.round(Math.cos(clock*.4+i*1.2)*5):0;
+        ctx.globalAlpha=mode===0?.25:mode===2?.35:.57;
+        ctx.drawImage(photo,0,y0,w,sh,step,y0+rise,w,sh);
       }
-      for(let y=0;y<h;y++){
-        const gy=Math.floor(y/cell), fy=(y%cell)/cell, row=y*w;
-        for(let x=0;x<w;x++){
-          const gx=Math.floor(x/cell), fx=(x%cell)/cell, p=gy*gw+gx, q=p+gw;
-          const ddx=dx[p]+(dx[p+1]-dx[p])*fx, ddy=dx[q]+(dx[q+1]-dx[q])*fx;
-          const edx=dy[p]+(dy[p+1]-dy[p])*fx, edy=dy[q]+(dy[q+1]-dy[q])*fx;
-          const sx=clamp(Math.round(x+ddx+(ddy-ddx)*fy),0,w-1), sy=clamp(Math.round(y+edx+(edy-edx)*fy),0,h-1);
-          const a=(row+x)*4, b=(sy*w+sx)*4;
-          let rr=src[b], gg=src[b+1], bb=src[b+2];
-          if(high>.12){
-            const shift=Math.round(1+high*4+hit*2);
-            const b2=(clamp(sy+shift,0,h-1)*w+clamp(sx-shift,0,w-1))*4;
-            rr=rr*(1-high*.08)+src[b2]*high*.08; bb=bb*(1-high*.12)+src[b2+2]*high*.12;
-          }
-          if(low>.1){
-            const warm=low*.08 + this.features.warm*.04; rr=clamp(rr*(1+warm),0,255); gg=clamp(gg*(1+warm*.3),0,255);
-          }
-          if(mid>.1){
-            const cool=mid*.06 + this.features.cool*.04; bb=clamp(bb*(1+cool),0,255); gg=clamp(gg*(1+cool*.2),0,255);
-          }
-          dst[a]=rr; dst[a+1]=gg; dst[a+2]=bb; dst[a+3]=255;
-        }
+
+      // 不規則な形の写真領域を異なる時間で移動させる。
+      // 写真はカラーのまま保持し、一部だけレンズの屈折のように見せる。
+      for(let i=0;i<4;i++){
+        const p=patches[i], cx=p.x*w,cy=p.y*h;
+        const rx=p.rx*w*.95,ry=p.ry*h*.86;
+        const period=mode===2?.33:mode===1?1.5:mode===3?1.13:.57;
+        const k=(mode===1||mode===3)?Math.floor(t*10)/10:t;
+        const sx=Math.sin(k*(period+i*.19)+p.phase+mid*1.4)*amount*(.7+.2*i);
+        const sy=Math.cos(k*(period*.72+i*.15)+p.phase+low*2.2)*amount*.65;
+        ctx.save();ctx.beginPath();
+        const wobble=1+.08*Math.sin(t*.7+i*2.3);
+        ctx.ellipse(cx,cy,Math.max(1,rx*wobble),Math.max(1,ry/wobble),.13*Math.sin(t*.33+p.phase),0,Math.PI*2);
+        ctx.clip();
+        ctx.globalAlpha=.22+env*.1+jump*.14;
+        if(ctx.filter!==undefined) ctx.filter=`hue-rotate(${(hueDrift+i*27)%360}deg) saturate(${1.02+mid*.4})`;
+        ctx.drawImage(photo,sx,sy,w,h);
+        ctx.restore();
       }
-      ctx.putImageData(this.framePixels,0,0);
+      ctx.restore();
+
+      // ディレイ感のある写真帯は音のアタックがある時のみ現れる。
       this.drawSoundSlices(ctx,w,h,t,high,hit+pulse*.8);
-      // Internal events: redraw several photo patches with time lag and tinted filters.
-      ctx.save();
-      for(let i=0;i<3;i++){
-        const p=patches[i+1], cx=p.x*w, cy=p.y*h, rx=p.rx*w*.78, ry=p.ry*h*.72;
-        const shift=mode===1?Math.floor(clock*7)/7:clock;
-        const xx=Math.sin(shift*(.85+i*.17)+p.phase+hit*3)*(mode===2?44:30)*(1+env*.4);
-        const yy=Math.cos(shift*(.71+i*.12)+p.phase+low*2)*(mode===2?40:24)*(1+env*.2);
-        ctx.save(); ctx.beginPath(); const wobble=1+.16*Math.sin(clock*.9+i*2.3+mid);
-        ctx.ellipse(cx,cy,rx*wobble,ry/wobble,.17*Math.sin(shift*.37+p.phase),0,Math.PI*2); ctx.clip();
-        ctx.globalAlpha=.14+.12*env+.12*hit+.10*pulse;
-        ctx.filter=`hue-rotate(${(hueDrift + i*34)%360}deg) saturate(${1.04+this.features.saturation*.55+high*.38}) contrast(${1.01+mid*.22+pulse*.14})`; 
-        ctx.drawImage(this.basePhoto,xx,yy,w,h);
-        ctx.restore();
-      }
-      ctx.restore();
-      ctx.filter='none';
 
-      // Lens / oil-film layers that sit more naturally on the photo.
-      ctx.save();
-      const colors=this.features.palette||[[.5,.6,.7],[.2,.7,.8],[.8,.3,.5]];
-      const blobPower=.10 + env*.14 + mid*.10 + pulse*.18;
+      // 色の塊ではなく、油膜やレンズ内の薄い干渉膜として処理。
+      const palette=this.features.palette||[[.5,.6,.7],[.2,.7,.8],[.8,.3,.5]];
       for(let i=0;i<3;i++){
-        const p=patches[i];
-        const band=(i===0?low:i===1?mid:high);
-        const x=(p.x + Math.sin(t*(.16+i*.03)+this.seed+i)*(.03+.03*band) + this.audio.phase*.012*(i+1))*w;
-        const y=(p.y + Math.cos(t*(.20+i*.02)+this.seed*1.3+i*1.1)*(.025+.03*band) + pulse*.03*Math.sin(i+t))*h;
-        const rad=(Math.min(w,h)*(.18 + i*.035))*(1+blobPower+band*.4);
-        const base=colors[i%colors.length];
+        const p=patches[i],band=i===0?low:i===1?mid:high;
+        const x=(p.x+Math.sin(t*(.16+i*.03)+this.seed+i)*(.03+.03*band)+this.audio.phase*.012*(i+1))*w;
+        const y=(p.y+Math.cos(t*(.20+i*.02)+this.seed*1.3+i*1.1)*(.025+.03*band)+pulse*.03*Math.sin(i+t))*h;
+        const radius=(Math.min(w,h)*(.18+i*.035))*(1+.1+env*.14+mid*.1+pulse*.18+band*.4);
+        const base=palette[i%palette.length];
         const hue=(Math.atan2(base[2]-base[1],base[0]-base[2])/Math.PI*180+360+hueDrift+i*18)%360;
-        this.drawLensBlob(ctx,x,y,rad,rad*(.82+.18*Math.sin(t*.7+i)+band*.12),hue,.8+band*1.1+pulse*.8,.15*Math.sin(t*.6+i*2));
+        this.drawLensBlob(ctx,x,y,radius,radius*(.82+.18*Math.sin(t*.7+i)+band*.12),hue,.8+band*1.1+pulse*.8,.15*Math.sin(t*.6+i*2));
       }
-      ctx.restore();
 
-      // Spectral afterimage flashes for high-frequency accents.
-      if(high>.10 || hit>.08 || pulse>.06){
-        ctx.save(); ctx.globalAlpha=.04 + high*.12 + hit*.09 + pulse*.12; ctx.globalCompositeOperation='screen';
-        const jitter=1 + Math.round(high*7 + hit*5 + pulse*5);
-        ctx.filter=`hue-rotate(${(180+hueDrift)%360}deg) saturate(${1.12+high*.55+pulse*.4})`;
-        ctx.drawImage(this.basePhoto,jitter,-jitter,w,h); ctx.drawImage(this.basePhoto,-jitter,jitter,w,h);
+      // 高音には短い色収差と残像。通常時の写真の視認性は保つ。
+      if(high>.10||hit>.08||pulse>.06){
+        ctx.save();ctx.globalCompositeOperation='screen';
+        ctx.globalAlpha=.035+high*.11+hit*.08+pulse*.11;
+        const j=1+Math.round(high*6+hit*5+pulse*4);
+        if(ctx.filter!==undefined)ctx.filter=`hue-rotate(${(180+hueDrift)%360}deg) saturate(${1.12+high*.55+pulse*.4})`;
+        ctx.drawImage(photo,j,-j,w,h);ctx.drawImage(photo,-j,j,w,h);
         ctx.restore();
       }
-
-      // Low-end frame swell / pulse.
-      if(low>.06 || pulse>.04){
-        ctx.save(); ctx.strokeStyle=`rgba(255,255,255,${0.015 + low*.04 + pulse*.04})`; ctx.lineWidth=1 + low*3 + pulse*3;
-        ctx.strokeRect(0,0,w,h); ctx.restore();
+      if(low>.06||pulse>.04){
+        ctx.save();ctx.strokeStyle=`rgba(255,255,255,${.015+low*.04+pulse*.04})`;
+        ctx.lineWidth=1+low*3+pulse*3;ctx.strokeRect(0,0,w,h);ctx.restore();
       }
     }
     async pngBlob(){ return new Promise((resolve,reject)=>this.canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('PNG export failed')),'image/png')); }

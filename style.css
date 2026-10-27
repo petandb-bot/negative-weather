@@ -1,6 +1,7 @@
 :root { color-scheme: dark; --ink:#111514; --paper:#e6e8dc; --muted:#94a39b; --line:#3b4741; --acid:#c1ed91; }
 * { box-sizing:border-box; }
 [hidden] { display:none!important; }
+#emptyState[hidden], .empty-state[hidden] {display:none!important;visibility:hidden!important;}
 html { min-height:100%; background:#111514; }
 body { margin:0; color:var(--paper); background:radial-gradient(ellipse at 72% 4%,#24342d 0%,transparent 38%),#111514; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace; -webkit-tap-highlight-color:transparent; }
 button { font:inherit; cursor:pointer; touch-action:manipulation; }
