@@ -1,44 +1,23 @@
-# NEGATIVE WEATHER v0.4.3 — Lens Return
+# NEGATIVE WEATHER v0.5 — Light Leak Derivations
 
-A photograph becomes a temporary audiovisual weather system.
+Turn a phone photograph into experimental music and a moving color image.
 
 ## Use
-1. Tap **SHOOT** or **USE PHOTO LIBRARY**.
-2. Tap **PLAY** to hear the generated sound loop.
-3. Tap **MUTATE** to explore another sound and motion variation.
-4. Tap **SAVE** to export WAV audio or the current PNG frame.
+1. **SHOOT** to take a photo or **USE PHOTO LIBRARY** to load one.
+2. **PLAY** starts the generated loop; **STOP** pauses it.
+3. **MUTATE** generates another sound and visual variation from the same photo.
+4. **SAVE** exports a WAV audio loop or the current PNG frame.
 
-## Eight sound engines
-- **VEIL** — Ambient harmonics
-- **PULSE** — Micro-rhythm
-- **CURRENT** — Slow drone
-- **PARTICLE** — Broken electronics
-- **RELAY** — Melodic echoes and responses
-- **RIFT** — Off-grid interlocking beats
-- **ASH** — Lo-fi noise and resonance
-- **ORBIT** — Phasing arpeggios
+## Sound engines
+VEIL, PULSE, CURRENT, PARTICLE, RELAY, RIFT, ASH, ORBIT,
+OBJECT, DUB TRACE, DUST LOOP, TOY HOUSE.
 
-Each photo biases the engine selection, BPM, pitch, and timing. Consecutive MUTATE results avoid repeating the same sound engine. Six visual motion behaviors remain available.
+OBJECT uses synthesized taps and resonances to suggest small physical objects. No external sound samples are used.
+
+## Visuals
+Six motion types, six light-leak color profiles, and three levels of motion activity. Color leak effects use soft, cached photographic masks instead of rectangular light overlays. The moving oval oil-film lens effects remain.
 
 ## Publish
-Upload all extracted files to the `main` branch root and enable **Settings → Pages → main / (root)**.
+Upload the extracted files to the root of the `main` branch in GitHub and enable **Settings → Pages → Deploy from a branch → main / (root)**.
 
-Audio and images are processed locally in your browser. Performance on iPhone Safari may vary.
-
-## v0.4.3 — Lens Return
-- Restored distinct animation behavior: drift, column, ripple, shutter, solvent, and afterimage.
-- Added an audio-aligned visual time base and four-stage evolution.
-- Reduced permanent lens overlays; colors and deformations emerge selectively.
-- Adapted visual motion to the 8 sound engines without changing audio synthesis.
-- iPhone-friendly Canvas 2D rendering; no required network services.
-
-## Testing status
-Checked in a desktop Chromium mock-browser flow: image loading, all six motion recipes,
-PLAY, changing visual frames, WAV export, and 320px layout. iPhone Safari performance
-and visual quality still require testing on the device.
-
-
-## What changed in v0.4.3
-- Removed rectangular / box-like light animation shapes
-- Replaced column, shutter and afterimage masks with organic ribbons and blobs
-- Allowed stronger photo mutation while keeping the 8 audio engines
+Photos are processed on-device. WAV and PNG downloads use the browser's share/download support. iPhone Safari performance depends on the device.

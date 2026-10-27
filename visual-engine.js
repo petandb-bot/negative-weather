@@ -12,6 +12,7 @@
       this.lastDraw=0; this.eventPulse=0; this.prevHit=0; this.lastRenderError=null;
       this.recipe=0; this.frameCost=0; this.drawCount=0; this.motionHistory=[];
       this.duration=20; this.history=null; this.historyAt=-100; this.sceneIndex=0;
+      this.colorProfile=0; this.motionProfile=0; this.colorLayers=[]; this.cachedPatches=null;
       this.resize(); window.addEventListener('resize',()=>this.resize(),{passive:true});
       requestAnimationFrame(t=>this.frame(t));
     }
@@ -19,11 +20,12 @@
       const box=this.canvas.getBoundingClientRect(); if(!box.width||!box.height) return;
       const scale=Math.min(window.devicePixelRatio||1,1.10,430/Math.max(box.width,box.height));
       this.canvas.width=Math.max(1,Math.round(box.width*scale)); this.canvas.height=Math.max(1,Math.round(box.height*scale));
-      if(this.image) this.prepare2D();
+      if(this.image) { this.prepare2D(); this.prepareColorLayers(); }
       if(this.hasPhoto) this.safeRender();
     }
     setPhoto(image){
       this.image=image; this.hasPhoto=true; this.history=null;this.historyAt=-100;this.prepare2D();
+      this.cachedPatches=this.makePatches(); this.prepareColorLayers();
       // 写真の登録は描画エラーから独立させる。初期化前でも静止画を表示できる。
       this.safeRender();
     }
@@ -42,8 +44,12 @@
       // 写真の固有値から開始位置を決め、MUTATEでは必ず次の動作文法に進む。
       // 最初の6回は重複しないが、音響エンジン選択には影響させない。
       this.recipe=(((features.hash>>>0)%6)+(mutation%6))%6;
+      // 動き・色変異・強度は独立したDNAとし、同じ映像結果の連続を避ける。
+      this.colorProfile=((((features.hash>>>7)%6)+mutation)%6);
+      this.motionProfile=((((features.hash>>>14)%3)+Math.floor(mutation/2))%3);
       this.bpm=bpm; this.t=0; this.eventPulse=0; this.prevHit=0;
       this.history=null;this.historyAt=-100;this.sceneIndex=0;
+      this.cachedPatches=this.makePatches(); this.prepareColorLayers();
       this.safeRender();
     }
     setAudioState(state){
@@ -84,6 +90,81 @@
         rx:.12+.12*rng(i*19+5),ry:.11+.14*rng(i*23+6),
         phase:i*2.31+this.seed*7
       }));
+    }
+    prepareColorLayers(){
+      // 撮影・MUTATE時にだけ画像の色変換とソフトマスクを焼き込む。
+      // アニメーション中の全画素処理や毎フレームの画像色変換は避ける。
+      if(!this.basePhoto){this.colorLayers=[];return;}
+      const w=this.canvas.width,h=this.canvas.height;
+      const patches=this.cachedPatches||this.makePatches();
+      const palette=this.features.palette||[[.5,.6,.7],[.2,.7,.8],[.8,.3,.5]];
+      const colorSchemes=[
+        ['hue-rotate(28deg) saturate(1.45) contrast(1.04)','hue-rotate(-28deg) saturate(1.35)'],
+        ['hue-rotate(68deg) saturate(1.55) contrast(.98)','hue-rotate(-55deg) saturate(1.45)'],
+        ['hue-rotate(138deg) saturate(1.42)','hue-rotate(-105deg) saturate(1.45)'],
+        ['saturate(.53) brightness(1.1) contrast(.92)','sepia(.32) saturate(.65) brightness(1.08)'],
+        ['hue-rotate(158deg) saturate(.86) contrast(1.09)','hue-rotate(195deg) saturate(1.16)'],
+        ['sepia(.30) saturate(1.35) contrast(1.04)','hue-rotate(-37deg) saturate(1.46)']
+      ];
+      this.colorLayers=[];
+      for(let i=0;i<2;i++){
+        const p=patches[(i*2+1)%patches.length], hue=this.colorProfile;
+        const layer=document.createElement('canvas');layer.width=w;layer.height=h;
+        const g=layer.getContext('2d',{alpha:true});
+        g.save();
+        if(typeof g.filter==='string')g.filter=colorSchemes[hue][i];
+        g.drawImage(this.basePhoto,0,0,w,h);
+        g.restore();
+        // Safariのfilter非対応時も差が出るよう、薄いフィルム色を重ねる。
+        const c=palette[(i+hue)%palette.length];
+        g.globalCompositeOperation='source-atop';g.globalAlpha=.16;
+        g.fillStyle=`rgb(${Math.round(c[0]*255)},${Math.round(c[1]*255)},${Math.round(c[2]*255)})`;
+        g.fillRect(0,0,w,h);
+        g.globalAlpha=1;g.globalCompositeOperation='source-over';
+        const mask=document.createElement('canvas');mask.width=w;mask.height=h;
+        const m=mask.getContext('2d');
+        m.save();
+        m.translate(p.x*w,p.y*h);
+        const rx=Math.min(w,h)*(.28+.035*i), ry=rx*(.8+.30*Math.sin(this.seed*6+i));
+        m.rotate(Math.sin(this.seed*4+i)*.3);
+        m.scale(1,Math.max(.45,ry/rx));
+        const grad=m.createRadialGradient(0,0,rx*.1,0,0,rx);
+        grad.addColorStop(0,'rgba(255,255,255,.95)');
+        grad.addColorStop(.42,'rgba(255,255,255,.84)');
+        grad.addColorStop(.70,'rgba(255,255,255,.48)');
+        grad.addColorStop(.91,'rgba(255,255,255,.10)');
+        grad.addColorStop(1,'rgba(255,255,255,0)');
+        m.fillStyle=grad;m.fillRect(-rx,-rx,rx*2,rx*2);
+        m.restore();
+        g.globalCompositeOperation='destination-in';g.drawImage(mask,0,0);
+        g.globalCompositeOperation='source-over';
+        this.colorLayers.push({canvas:layer,patch:p,rx,ry});
+      }
+    }
+    drawColorEvolution(ctx,w,h,t,scene,env,low,mid,high,jump){
+      if(!this.colorLayers.length)return;
+      // 光が現れる・溶ける・退色する周期を色系統ごとに分ける。
+      const p=this.colorProfile, profileStrength=[.43,.52,.48,.40,.46,.45][p];
+      const act=this.motionProfile===0?.70:this.motionProfile===2?1.18:1;
+      const freq=(p===4?.45:p===1?.21:.32);
+      for(let i=0;i<this.colorLayers.length;i++){
+        const layer=this.colorLayers[i];
+        const period=Math.sin(t*freq+i*1.7+this.seed*11);
+        let appear=.5+.5*period;
+        if(p===1)appear=Math.pow(appear,.65); // melt: long decay
+        if(p===3)appear=.38+.32*Math.cos(t*.16+i*3); // bleaching, gradual
+        if(p===4)appear=Math.pow(appear,1.75); // phosphor, sparse
+        let alpha=(.10+appear*profileStrength)*( .4+scene*.55 )*act;
+        alpha*=1+Math.min(.35,jump*.2+high*.16+mid*.12);
+        if(p===2)alpha*=.80+Math.sin(t*.34+i*2)*.14;
+        const x=Math.sin(t*(.17+i*.12)+layer.patch.phase)*(12+mid*14+jump*8)*act;
+        const y=Math.cos(t*(.13+i*.08)+layer.patch.phase)*(10+low*12)*act;
+        const zoom=1+(p===1?.04:p===3?.02:.015)*Math.sin(t*.3+i*1.7)+jump*.02;
+        ctx.save();ctx.globalAlpha=clamp(alpha,0,.64);
+        ctx.translate(w/2+x,h/2+y);ctx.scale(zoom,zoom);ctx.translate(-w/2,-h/2);
+        ctx.drawImage(layer.canvas,0,0,w,h);
+        ctx.restore();
+      }
     }
     drawLensBlob(ctx,x,y,rx,ry,hue,strength=1,tilt=0){
       ctx.save();
@@ -287,7 +368,7 @@
       const env=this.audio.env||0,low=this.audio.low||0,mid=this.audio.mid||0;
       const high=this.audio.high||0,hit=this.audio.hit||0,pulse=this.eventPulse||0;
       const hueDrift=(t*13+high*65+pulse*120+(Number(this.features.hue)||0)*180)%360;
-      const patches=this.makePatches();
+      const patches=this.cachedPatches||this.makePatches();
       const jump=hit*.45+pulse*.55;
       // 反復する呼吸ではなく、発芽→増殖→逸脱→沈静という時間的な起伏。
       // 低音エンジンでは大きく伸び、ビート系では短いピークを作る。
@@ -295,8 +376,8 @@
         loopPhase<.50?(.72+.20*Math.sin((loopPhase-.20)/.30*Math.PI)):
         loopPhase<.78?(.88+.12*Math.sin((loopPhase-.50)/.28*Math.PI)):
         (.88-.63*(loopPhase-.78)/.22);
-      const engineGain=[1,.95,.76,1.08,1.18,1.10,.72,.88][this.engine]||1;
-      const amount=[20,32,26,29][mode]*engineGain*(.62+scene*.75)*(1+env*.18+jump*.62);
+      const engineGain=[1,.95,.76,1.08,1.18,1.10,.72,.88,1.12,.8,.85,1.16][this.engine]||1;
+      const amount=[20,32,26,29][mode]*engineGain*([.65,.95,1.26][this.motionProfile]||1)*(.62+scene*.75)*(1+env*.18+jump*.62);
 
       // ネイティブ描画を中心に再構成。毎フレーム全画素をJavaScriptで走査しない。
       // iPhone Safariでの描画負荷を大幅に軽減し、音のアタックにも追従しやすくする。
@@ -307,6 +388,8 @@
 
       // 動作文法はMUTATEで切り替わる。過剰な重ね描きは避ける。
       this.drawMotion(ctx,photo,w,h,t,beat,amount,patches,low,mid,high,jump,scene);
+      // 写真そのものの色調が局所的に分化する。単なる明るい楕円は追加しない。
+      this.drawColorEvolution(ctx,w,h,t,scene,env,low,mid,high,jump);
       // オイルレンズの馴染みを残す、共通の柔らかい局所屈折（最大2領域）。
       if(true){
         for(let i=0;i<([2,2,3,2,2,3][this.recipe]||2);i++){
@@ -325,7 +408,7 @@
 
       // 音のアタックに合わせた、画像の瞬間的な位置ジャンプ。
       // 穏やかなエンジンでは控えめ、RIFT/PULSE/PARTICLEなどは明確に反応。
-      const rhythmic=[.38,1,.15,.85,.65,1,.15,.72][this.engine]||.5;
+      const rhythmic=[.38,1,.15,.85,.65,1,.15,.72,1,.55,.66,1][this.engine]||.5;
       if(jump>.15 && rhythmic>.4){
         const p=patches[Math.floor(t*this.bpm/60)%patches.length], cx=p.x*w,cy=p.y*h;
         ctx.save();ctx.beginPath();this.pathOrganic(ctx,cx,cy,p.rx*w*1.38,p.ry*h*1.32,t+p.phase,.10);ctx.clip();

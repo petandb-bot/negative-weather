@@ -2,7 +2,7 @@
   'use strict';
   const SR = 22050;
   const TAU = Math.PI * 2;
-  const ENGINES = ['VEIL','PULSE','CURRENT','PARTICLE','RELAY','RIFT','ASH','ORBIT'];
+  const ENGINES = ['VEIL','PULSE','CURRENT','PARTICLE','RELAY','RIFT','ASH','ORBIT','OBJECT','DUB TRACE','DUST LOOP','TOY HOUSE'];
   const VARIANTS = {
     VEIL:['AERIAL BLOOM','METAL GLASS','TAPE GLOW'],
     PULSE:['DRY GRID','FM STEP','LOW CIRCUIT'],
@@ -11,7 +11,11 @@
     RELAY:['ECHO CHAMBER','CHIMING REPLY','FRAYED SIGNAL'],
     RIFT:['OFF GRID','SOFT PRESSURE','FRACTURED DANCE'],
     ASH:['TAPE DUST','RUSTED AIR','GHOST HISS'],
-    ORBIT:['INTERLOCK','CIRCULAR BELLS','MICRO ARPEGGIO']
+    ORBIT:['INTERLOCK','CIRCULAR BELLS','MICRO ARPEGGIO'],
+    OBJECT:['TABLE DUST','GLASS POCKET','PLASTIC STEPS'],
+    'DUB TRACE':['SPACE RETURN','HOLLOW ECHO','LOST PULSE'],
+    'DUST LOOP':['FRAYED TAPE','WEAK SIGNAL','CLOSED CASSETTE'],
+    'TOY HOUSE':['SOFT FLOOR','PLASTIC CLUB','SMALL PARADE']
   };
   const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
   const mix=(a,b,t)=>a+(b-a)*t;
@@ -94,7 +98,11 @@
       .30+1.35*f.colorDiversity+1.25*f.highlights+.85*f.balance+.85*f.saturation,   // RELAY
       .30+1.9*f.orientation+1.45*f.edge+1.15*f.spatialContrast+cellContrast,        // RIFT
       .30+1.7*dark+1.10*f.texture+1.15*(1-f.saturation)+.6*f.cool,                 // ASH
-      .30+1.4*f.hue+1.35*f.saturation+1.2*f.openness+.80*f.colorDiversity          // ORBIT
+      .30+1.4*f.hue+1.35*f.saturation+1.2*f.openness+.80*f.colorDiversity,         // ORBIT
+      .30+2.4*f.texture+1.0*f.edge+1.0*f.spatialContrast+.7*f.colorDiversity, // OBJECT
+      .30+1.8*f.openness+1.1*f.cool+.85*f.highlights+.7*f.colorDiversity,    // DUB TRACE
+      .30+2.1*(1-f.saturation)+1.4*f.texture+1.1*(1-f.light),                // DUST LOOP
+      .30+1.6*f.saturation+1.0*f.light+1.0*f.orientation+.8*f.edge           // TOY HOUSE
     ];
     // 画像からの偏りは維持するが、1系統の独占を防ぐ。
     const powered=raw.map(v=>Math.pow(Math.max(.1,v),2.2));
@@ -120,7 +128,7 @@
     return sample(m,previous);
   }
   function imageBpm(f,engine,seed){
-    const ranges=[[54,86],[88,136],[40,72],[76,128],[64,108],[94,148],[45,82],[80,134]][engine];
+    const ranges=[[54,86],[88,136],[40,72],[76,128],[64,108],[94,148],[45,82],[80,134],[72,122],[76,124],[58,106],[104,138]][engine];
     let drive;
     if(engine===0)drive=.12+f.saturation*.15+(1-f.edge)*.5+f.light*.12+f.colorDiversity*.2;
     else if(engine===1)drive=.15+f.edge*.42+f.texture*.22+f.orientation*.12;
@@ -129,7 +137,11 @@
     else if(engine===4)drive=.20+f.highlights*.22+f.colorDiversity*.30+f.saturation*.16;
     else if(engine===5)drive=.24+f.edge*.29+f.orientation*.22+f.contrast*.15;
     else if(engine===6)drive=.12+(1-f.light)*.32+f.texture*.22+(1-f.saturation)*.16;
-    else drive=.18+f.saturation*.29+f.hue*.18+f.openness*.22;
+    else if(engine===7)drive=.18+f.saturation*.29+f.hue*.18+f.openness*.22;
+    else if(engine===8)drive=.22+f.texture*.35+f.edge*.24+f.orientation*.1;
+    else if(engine===9)drive=.15+f.openness*.35+f.highlights*.18+f.cool*.12;
+    else if(engine===10)drive=.12+(1-f.saturation)*.24+f.texture*.33+(1-f.light)*.15;
+    else drive=.24+f.saturation*.28+f.light*.14+f.edge*.16;
     const r=new Random((f.hash^seed^0x71c48e21)>>>0);
     return Math.round(clamp(mix(ranges[0],ranges[1],clamp(drive,0,1))+(r.next()-.5)*6,ranges[0],ranges[1]));
   }
@@ -141,7 +153,7 @@
       this.variant=this.chooseVariant();
       this.name=ENGINES[this.engine]; this.variantName=VARIANTS[this.name][this.variant];
       this.bpm=imageBpm(f,engine,seed); this.beat=60/this.bpm;
-      this.duration=(this.engine===2||this.engine===6) ? this.beat*24 : this.beat*32;
+      this.duration=([2,6,10].includes(this.engine)) ? this.beat*24 : this.beat*32;
       this.n=Math.ceil(this.duration*SR);
       this.left=new Float32Array(this.n); this.right=new Float32Array(this.n);
       this.root=36+Math.round(f.r*4+f.b*5+f.g*3+f.spatialContrast*3+f.hue*5);
@@ -179,9 +191,25 @@
         if(f.saturation<.23) return 0;
         if(f.edge>.35) return 1;
         return 2;
-      }else{
+      }else if(this.engine===7){
         if(f.hue>.47) return 1;
         if(f.saturation>.36) return 2;
+        return 0;
+      }else if(this.engine===8){
+        if(f.edge>.36) return 0;
+        if(f.highlights>.12) return 1;
+        return 2;
+      }else if(this.engine===9){
+        if(f.openness>.65) return 0;
+        if(f.cool>.16) return 1;
+        return 2;
+      }else if(this.engine===10){
+        if(f.saturation<.20) return 0;
+        if(f.texture>.38) return 1;
+        return 2;
+      }else{
+        if(f.light>.58) return 2;
+        if(f.texture>.38) return 1;
         return 0;
       }
     }
@@ -198,6 +226,9 @@
       if(this.engine===4 && this.variant===2) return clamp(.19+f.texture*.18,0,.41);
       if(this.engine===6) return clamp(.27+f.texture*.18+(1-f.light)*.08,0,.53);
       if(this.engine===5 && this.variant===2) return .15;
+      if(this.engine===8) return .05+f.texture*.08;
+      if(this.engine===10) return .30+f.texture*.19+(1-f.saturation)*.08;
+      if(this.engine===9 && this.variant===2) return .12;
       return clamp(.02 + f.texture*.03,0,.08);
     }
     addEvent(time,low=0,mid=0,high=0,accent=0){ this.events.push({time,low,mid,high,accent}); }
@@ -210,6 +241,28 @@
         const white=this.rng.range(-1,1); band=band*.72+white*.28;
         const hiss=(white*.42 + band*.58)*amp*env;
         this.left[i]+=hiss*l; this.right[i]+=hiss*r;
+      }
+    }
+    // 小さな物体の接触を模した合成打音。実録音のサンプルは使用しない。
+    // 周波数の異なる共鳴と帯域を制限した摩擦音を混合して、クリックだけにならないようにする。
+    addObjectImpact(at,amp,material='wood',pan=0){
+      if(at<0||at>=this.duration)return;
+      const r=this.rng, f=this.f;
+      const freq=material==='glass'?r.range(750,1250):material==='plastic'?r.range(230,450):r.range(130,280);
+      const dur=material==='glass'?.26:material==='plastic'?.15:.115;
+      const a=Math.max(0,Math.floor(at*SR)),end=Math.min(this.n,Math.floor((at+dur)*SR));
+      const pl=Math.sqrt((1-pan)*.5),pr=Math.sqrt((1+pan)*.5);
+      let low=0,phase=0;
+      this.addEvent(at,material==='wood'?amp*1.8:amp*.3,amp*1.2,material==='glass'?amp*1.7:amp*.5,amp*1.8);
+      for(let j=a;j<end;j++){
+        const t=(j-a)/SR, decay=Math.exp(-t*(material==='glass'?13:material==='plastic'?26:36));
+        phase+=TAU*freq/SR*(1-.035*Math.exp(-t*25));
+        const white=r.range(-1,1);low=.78*low+.22*white;
+        const reson=(material==='glass'? .48*Math.sin(phase)+.28*Math.sin(phase*1.51)+.14*Math.sin(phase*2.37):
+          material==='plastic'?.58*Math.sin(phase)+.18*Math.sin(phase*1.9):.52*Math.sin(phase)+.09*Math.sin(phase*2.45));
+        const hiss=(white-low)*(.17+.12*f.texture)*Math.exp(-t*80);
+        const v=(reson+hiss)*decay*amp*Math.min(1,t*550+0.03);
+        this.left[j]+=v*pl;this.right[j]+=v*pr;
       }
     }
     addTone(freq,at,dur,amp,kind='soft',pan=0,opts={}){
@@ -445,6 +498,86 @@
       for(let i=0;i<4;i++)this.addTone(this.note(seq[i*4],-1),i*8*b,6*b,.027,'pad',r.range(-.4,.4),
         {attack:b,release:b*1.0,bands:[.45,.35,.2]});
     }
+    // OBJECT: 具体音に近い小さな接触音が拍を形成する。写真の局所密度で発音が変わる。
+    object(){
+      const r=this.rng,b=this.beat,f=this.f,v=this.variant;
+      const material=['wood','glass','plastic'][v];
+      const pattern=[1,0,0,1,0,1,0,0,1,0,1,0,0,0,1,0];
+      for(let bar=0;bar<8;bar++){
+        for(let step=0;step<16;step++){
+          const k=(bar*5+step*3)%16, e=f.edgeCells[k],c=f.cells[k],sat=f.satCells[k];
+          const isMotif=pattern[(step+Math.floor(c*4))%16]===1;
+          if(!r.chance((isMotif?.62:.12)+e*.22+sat*.08)) continue;
+          const at=(bar*4+step*.25)*b+r.range(-.018,.026);
+          const accent=step%4===0?1.0:.54;
+          this.addObjectImpact(at,(.045+e*.040)*accent,material,r.range(-.7,.7));
+          if(step%8===5 && r.chance(.33+f.texture*.12))
+            this.addObjectImpact(at+b*.22,.020,'glass',r.range(-1,1));
+        }
+        if(bar%2===0)this.addTone(this.note(bar%3,-1),bar*4*b,5.4*b,.022,'soft',r.range(-.4,.4),
+          {attack:.7,release:.9,bands:[.45,.3,.1]});
+      }
+    }
+    // DUB TRACE: 音を詰めず、少数の原音が遅延の間隔を使って応答する。
+    dubTrace(){
+      const r=this.rng,b=this.beat,f=this.f,v=this.variant;
+      const delayBeats=v===0?.75:v===1?1.0:1.5;
+      for(let bar=0;bar<8;bar++){
+        const t=bar*4*b,degree=Math.floor(f.cells[(bar*2)%16]*9+f.hueCells[(bar*2+1)%16]*5)%5;
+        if(bar%2===0)this.addTone(this.note(degree,-1),t,3*b,.053,'bass',-.06,
+          {attack:.04,release:.45,bands:[.9,.16,.03]});
+        const hits=v===2?1:2;
+        for(let i=0;i<hits;i++){
+          if(!r.chance(.6+f.openness*.25))continue;
+          const at=t+(i===0?.5:2.25)*b;
+          const pan=i===0?-.45:.5;
+          this.addTone(this.note(degree+i,1),at,b*.25,.058,v===1?'glass':'ping',pan,{attack:.008,release:.18});
+          for(let tap=1;tap<=3;tap++){
+            const when=at+tap*delayBeats*b;if(when>this.duration-.15)break;
+            this.addTone(this.note(degree+i+(v===2?tap%2:0),1),when,b*.20,.056*Math.pow(.48,tap),'soft',-pan,
+              {attack:.012,release:.12,bands:[.16,.48,.36]});
+          }
+        }
+        if(bar%2===1 && r.chance(.6)) this.addNoise(t+b*1.5,.07,.024,'air',r.range(-.7,.7));
+      }
+    }
+    // DUST LOOP: ざらつきと弱い拍の反復。ノイズは発音の隙間に置く。
+    dustLoop(){
+      const r=this.rng,b=this.beat,f=this.f,v=this.variant;
+      const cycle=12;
+      const motif=Array.from({length:cycle},(_,i)=>{
+        const cell=(i*5)%16;
+        return (f.cells[cell]*.45+f.edgeCells[cell]*.35+f.satCells[cell]*.2);
+      });
+      for(let step=0;step<24;step++){
+        const t=step*b, m=motif[step%cycle];
+        if(step%3===0 || (r.chance(.12+m*.36)))
+          this.addObjectImpact(t+b*r.range(-.016,.025),.033+m*.025,'wood',r.range(-.65,.65));
+        if(step%2===1&&r.chance(.36+m*.32))
+          this.addDust(t+b*.3,Math.min(.12+b*.12,this.duration-t-b*.3),.0025+m*.003,r.range(-.9,.9));
+        if(step%6===0)this.addTone(this.note(Math.floor(m*7)%5,-1),t,2.7*b,.047,'soft',r.range(-.3,.3),
+          {attack:.12,release:.4,bands:[.65,.24,.07]});
+        if(v===1 && step%4===3)this.addTone(this.note((step*3)%5,1),t+b*.67,.13,.021,'ping',r.range(-.8,.8),{release:.07});
+      }
+    }
+    // TOY HOUSE: チープなシンセの四拍骨格。ただし音の数は少なく、押し付けない。
+    toyHouse(){
+      const r=this.rng,b=this.beat,f=this.f,v=this.variant;
+      const seq=Array.from({length:8},(_,i)=>Math.floor(f.cells[i*2]*7+f.satCells[i*2]*8)%5);
+      for(let bar=0;bar<8;bar++){
+        for(let beat=0;beat<4;beat++){
+          const at=(bar*4+beat)*b;
+          this.kick(at,.072+(v===2?.02:0));
+          if((beat===1||beat===3)&&r.chance(.52))this.addObjectImpact(at+b*.04,.024,'plastic',r.range(-.2,.2));
+          if(r.chance(.65+f.saturation*.1))this.addTone(this.note(seq[(bar+beat)%8],-1),at+b*.04,b*.35,.037,'bass',0,
+            {attack:.008,release:.15,bands:[.82,.19,.02]});
+          if(r.chance(v===1?.67:.48))this.addTone(this.note(seq[(bar*3+beat)%8]+2,1),at+b*.57,b*.19,.034,
+            v===2?'pulse':'fm',r.range(-.55,.55),{attack:.005,release:.085,mod:.25+f.saturation,bands:[.12,.54,.28]});
+        }
+        if(bar%2===0)this.addTone(this.note(seq[(bar+2)%8],0),bar*4*b+b*.3,3.4*b,.021,'soft',r.range(-.4,.4),
+          {attack:.35,release:.48,bands:[.2,.42,.3]});
+      }
+    }
     applyLofi(){
       const l=this.lofiAmount||0; if(l<=0) return;
       const L=this.left, R=this.right, n=this.n, rng=new Random((this.seed^0x5a17e3b1)>>>0);
@@ -468,7 +601,7 @@
       this.applyLofi();
       let peak=0,sum=0;
       for(let i=0;i<n;i++){ peak=Math.max(peak,Math.abs(l[i]),Math.abs(r[i])); sum+=l[i]*l[i]+r[i]*r[i]; }
-      const rms=Math.sqrt(sum/(2*n)); const targets=[.094,.118,.093,.108,.096,.109,.084,.104], target=targets[this.engine];
+      const rms=Math.sqrt(sum/(2*n)); const targets=[.094,.118,.093,.108,.096,.109,.084,.104,.100,.090,.087,.111], target=targets[this.engine];
       const gain=Math.min(2.8,target/Math.max(rms,1e-5),.72/Math.max(peak,1e-5));
       for(let i=0;i<n;i++){ l[i]=Math.tanh(l[i]*gain*1.04)*.92; r[i]=Math.tanh(r[i]*gain*1.04)*.92; }
       const cross=Math.min(Math.floor(SR*.12),Math.floor(n/16));
@@ -502,6 +635,10 @@
     else if(engine===5) w.rift();
     else if(engine===6) w.ash();
     else if(engine===7) w.orbit();
+    else if(engine===8) w.object();
+    else if(engine===9) w.dubTrace();
+    else if(engine===10) w.dustLoop();
+    else if(engine===11) w.toyHouse();
     else throw new Error('Invalid engine');
     return w.finish();
   }
