@@ -87,6 +87,7 @@
       world=result;
       cachedAudioBuffer=null; // 次に再生するとき新しい1つのAudioBufferを作る。
       renderer.setMood(engine,seed,features,result.bpm,mutation,result.duration);
+      renderer.setComposition(result.composition);
       renderer.playing=false;
       ui.condition.textContent=`${result.name} / ${result.variant}`;
       ui.detail.textContent=`${result.bpm} BPM`;
@@ -99,8 +100,12 @@
     if(source&&audioCtx&&world){
       const elapsed=(audioCtx.currentTime-startedAt)%world.duration; const phase=elapsed/world.duration; ui.progress.style.width=`${(phase*100).toFixed(2)}%`;
       const idx=Math.min(world.envelope.length-1,Math.floor(phase*world.envelope.length));
-      renderer.setAudioState({phase,env:world.envelope[idx]||0,low:world.low[idx]||0,mid:world.mid[idx]||0,high:world.high[idx]||0,hit:world.hit[idx]||0});
-    }else{ renderer.setAudioState({phase:0,env:(renderer.audio?.env||0)*.92,low:0,mid:0,high:0,hit:0}); }
+      const comp=world.composition;
+      const ci=comp?Math.min(comp.timeline.length-1,Math.floor(phase*comp.timeline.length)):0;
+      renderer.setAudioState({phase,env:world.envelope[idx]||0,low:world.low[idx]||0,mid:world.mid[idx]||0,high:world.high[idx]||0,hit:world.hit[idx]||0,
+        arrangement:comp?comp.timeline[ci]:.5,turn:comp?comp.transition[ci]:0,
+        silence:comp?comp.silence:.25});
+    }else{ renderer.setAudioState({phase:0,env:(renderer.audio?.env||0)*.92,low:0,mid:0,high:0,hit:0,arrangement:world?.composition?.timeline?.[0]??.5,turn:0,silence:world?.composition?.silence??.25}); }
     requestAnimationFrame(syncProgress);
   }
   function filename(ext){ return `negative-weather-${world?world.name.toLowerCase():'image'}-${String(world?.seed%10000||0).padStart(4,'0')}.${ext}`; }

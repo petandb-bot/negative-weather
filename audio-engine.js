@@ -143,6 +143,74 @@
     const r=new Random((f.hash^seed^0x71c48e21)>>>0);
     return Math.round(clamp(mix(ranges[0],ranges[1],clamp(drive,0,1))+(r.next()-.5)*6,ranges[0],ranges[1]));
   }
+
+  // PHOTO SCORE: 写真そのものが生成する作曲地図。
+  // 長い静寂と小節単位の発展を作り、ただのランダムノート配置を避ける。
+  // f の特徴量はSHOOT時に固定。seedはMUTATEの小さな変奏にだけ用いる。
+  function makeComposition(f,engine,seed,bpm,duration){
+    const rr=new Random(((f.hash>>>0)^seed^0x6a1d8537)>>>0);
+    const cells=f.cells||Array(16).fill(.5), edges=f.edgeCells||Array(16).fill(.1);
+    const sats=f.satCells||Array(16).fill(.2), hues=f.hueCells||Array(16).fill(.5);
+    const clip=clamp;
+    const detail=clip((f.edge||0)*3.4+(f.texture||0)*.48,0,1);
+    const complexity=clip((f.spatialContrast||0)*1.6+(f.colorDiversity||0)*.40+(f.contrast||0)*.8,0,1);
+    const continuity=clip(1-detail*.56-(f.contrast||0)*.52,0,1);
+    // エンジンごとに解釈を変える。フィールド系は静寂と長音を優先。
+    const rhythmic=[.3,.85,.15,.60,.45,.92,.23,.65,.82,.47,.67,.86][engine];
+    const density=clip(.24+detail*.30+(f.saturation||0)*.12+complexity*.14+rhythmic*.12-continuity*.10, .18,.91);
+    const silence=clip(.18+continuity*.48-detail*.13+rr.range(-.055,.055),.10,.75);
+    const changeRate=complexity>.49?2:(complexity>.27?4:8); // 基準となる和声変化の小節周期
+    const bars=Math.max(1,Math.round(duration/(60/bpm*4)));
+    const barEnergy=[];const motif=[];const harmony=[];
+    const startCell=((f.hash>>>5)%16), stride=[1,3,5,7][(f.hash>>>12)%4];
+    for(let bar=0;bar<bars;bar++){
+      const cell=(startCell+bar*stride)%16;
+      const light=cells[cell]||0,edge=edges[cell]||0,sat=sats[cell]||0;
+      const local=clip(light*.27+edge*.46+sat*.24,0,1);
+      const movement=.14*Math.sin((bar+.5)/bars*Math.PI)+.13*Math.cos(bar*1.7+(f.hue||0)*5);
+      const wanted=clip(.21+density*.55+local*.34+movement+rr.range(-.08,.08),.14,1.0);
+      barEnergy.push(wanted);
+    }
+    // フィールド系は短いブレイク、ビート系では密度の明確な谷を作る。
+    if(bars>=6){
+      const quietBar=1+Math.floor(((f.hash>>>15)%Math.max(2,bars-2)));
+      barEnergy[quietBar]*=(.38+.23*(1-silence));
+      if(bars>=8)barEnergy[(quietBar+3)%bars]*=.58;
+    }
+    for(let i=0;i<16;i++){
+      const cell=(i*stride+startCell)%16;
+      const local=clip((cells[cell]||0)*.28+(edges[cell]||0)*.48+(sats[cell]||0)*.24,0,1);
+      const accent=(i%4===0?.17:(i%4===2?.06:0));
+      motif.push(clip(.18+.46*local+.35*density+accent+rr.range(-.06,.06),.10,.97));
+    }
+    const changes=Math.max(1,Math.ceil(bars/changeRate));
+    for(let k=0;k<changes;k++){
+      const cell=(k*5+startCell)%16;
+      const v=(cells[cell]||0)*.43+(hues[cell]||0)*.28+(sats[cell]||0)*.29;
+      harmony.push(v>.67?2:(v<.33?-2:0));
+    }
+    harmony[0]=0; // 出発点は元音階のまま
+    const rate=clip(.55+.48*density+.10*(f.orientation||0),.55,1.2);
+    const identity={density,silence,continuity,complexity,changeRate,bars,barEnergy,motif,harmony,rate};
+    // 視覚側が毎フレーム参照する滑らかな「構成の呼吸」。
+    const N=Math.max(48,Math.ceil(duration*8));
+    const timeline=new Float32Array(N);
+    const transition=new Float32Array(N);
+    for(let i=0;i<N;i++){
+      const barPos=i/N*bars;
+      const a=Math.floor(barPos)%bars, b=(a+1)%bars;
+      const u=barPos-Math.floor(barPos), smooth=u*u*(3-2*u);
+      const base=barEnergy[a]*(1-smooth)+barEnergy[b]*smooth;
+      const phrasePhase=(barPos/changeRate)%1;
+      const swell=.91+.09*Math.sin(Math.PI*phrasePhase);
+      timeline[i]=clip(base*swell,.08,1);
+      const distance=Math.min(phrasePhase,1-phrasePhase);
+      transition[i]=Math.exp(-(distance*distance)/.005)*(i>0?.8:0);
+    }
+    identity.timeline=timeline;identity.transition=transition;
+    return identity;
+  }
+
   const scales=[[0,2,3,7,9],[0,2,5,7,10],[0,3,5,7,10],[0,2,4,7,9],[0,1,5,7,8]];
   const midiToHz=m=>440*Math.pow(2,(m-69)/12);
   class SoundWorld {
@@ -157,6 +225,7 @@
       this.root=36+Math.round(f.r*4+f.b*5+f.g*3+f.spatialContrast*3+f.hue*5);
       this.scale=scales[(Math.floor((f.saturation*.55+f.colorDiversity*.45)*17)+((seed>>>4)%scales.length))%scales.length];
       this.events=[];
+      this.composition=makeComposition(f,engine,seed,this.bpm,this.duration);
       this.lofiAmount=this.getLofiAmount();
     }
     chooseVariant(){
@@ -229,8 +298,36 @@
       if(this.engine===9 && this.variant===2) return .12;
       return clamp(.02 + f.texture*.03,0,.08);
     }
+    // 同じ小節位置では同じ休符傾向を持つ。主題と空白を共存させる。
+    activityAt(at){
+      const c=this.composition;
+      const bar=Math.min(c.bars-1,Math.max(0,Math.floor(at/(this.beat*4))));
+      const step=Math.max(0,Math.floor(at/this.beat*4))%16;
+      return {bar,step,energy:c.barEnergy[bar],accent:c.motif[step]};
+    }
+    eventLevel(at,kind='tone',duration=0){
+      const c=this.composition, a=this.activityAt(at);
+      if(duration>=this.beat*1.35 || kind==='drone' || kind==='pad'){
+        return clamp(.60+a.energy*.52,.45,1.18);
+      }
+      const noteCode=kind.split('').reduce((x,v)=>((x*33+v.charCodeAt(0))>>>0),5381);
+      const step=Math.floor(at/this.beat*8);
+      const x=((this.seed^Math.imul(step+1,0x27d4eb2d)^noteCode)>>>0);
+      const z=new Random(x).next();
+      const probability=clamp(.38+c.density*.32+a.accent*.24+a.energy*.20-c.silence*.18,.25,.97);
+      if(z>probability) return 0;
+      return clamp(.65+a.energy*.50,.55,1.2);
+    }
+    harmonicPitch(freq,at,kind,duration){
+      if(kind==='drone'||kind==='bass'||duration>this.beat*2.8)return freq;
+      const c=this.composition,bar=Math.max(0,Math.floor(at/(this.beat*4)));
+      const shift=c.harmony[Math.min(c.harmony.length-1,Math.floor(bar/c.changeRate))]||0;
+      return freq*Math.pow(2,shift/12);
+    }
     addEvent(time,low=0,mid=0,high=0,accent=0){ this.events.push({time,low,mid,high,accent}); }
     addDust(at,dur,amp,pan=0){
+      const level=this.eventLevel(at,'dust',dur);if(!level)return;
+      amp*=level;
       const a=Math.max(0,Math.floor(at*SR)), b=Math.min(this.n,Math.ceil((at+dur)*SR));
       const l=Math.sqrt((1-pan)/2), r=Math.sqrt((1+pan)/2); let band=0;
       this.addEvent(at,amp*.15,amp*.55,amp*.8,amp*.45);
@@ -245,6 +342,8 @@
     // 周波数の異なる共鳴と帯域を制限した摩擦音を混合して、クリックだけにならないようにする。
     addObjectImpact(at,amp,material='wood',pan=0){
       if(at<0||at>=this.duration)return;
+      const level=this.eventLevel(at,'object'+material,.15);if(!level)return;
+      amp*=level;
       const r=this.rng, f=this.f;
       const freq=material==='glass'?r.range(750,1250):material==='plastic'?r.range(230,450):r.range(130,280);
       const dur=material==='glass'?.26:material==='plastic'?.15:.115;
@@ -264,6 +363,9 @@
       }
     }
     addTone(freq,at,dur,amp,kind='soft',pan=0,opts={}){
+      const level=this.eventLevel(at,kind,dur);if(!level)return;
+      amp*=level;
+      freq=this.harmonicPitch(freq,at,kind,dur);
       const begin=Math.max(0,Math.floor(at*SR)), end=Math.min(this.n,Math.floor((at+dur)*SR)); if(end<=begin) return;
       const attack=opts.attack ?? (kind==='pad'?0.4:kind==='drone'?1.2:0.006);
       const release=opts.release ?? (kind==='pad'?0.75:kind==='drone'?1.4:0.14);
@@ -290,6 +392,8 @@
       }
     }
     addNoise(at,dur,amp,kind='air',pan=0){
+      const level=this.eventLevel(at,kind,dur);if(!level)return;
+      amp*=level;
       const a=Math.max(0,Math.floor(at*SR)), b=Math.min(this.n,Math.ceil((at+dur)*SR));
       const l=Math.sqrt((1-pan)/2), r=Math.sqrt((1+pan)/2); let low=0, low2=0;
       this.addEvent(at, kind==='thump'?amp*2:amp*.3, amp*1.1, kind==='air'?amp*.8:amp*1.4, amp*.8);
@@ -301,6 +405,10 @@
       }
     }
     kick(at,amp=.17){
+      const c=this.composition, a=this.activityAt(at);
+      // ビートの骨格は残すが、写真の密度が低いと拍を引き算する。
+      if(Math.floor(at/this.beat)%4!==0 && c.density<.49 && a.accent<.49)return;
+      amp*=clamp(.6+a.energy*.6,.52,1.16);
       const begin=Math.floor(at*SR), dur=.32; let phase=0; this.addEvent(at,amp*2.6,amp*.7,amp*.1,amp*1.4);
       for(let j=0;j<dur*SR&&begin+j<this.n;j++){
         const t=j/SR; phase+=TAU*(49+94*Math.exp(-t*19))/SR;
@@ -597,10 +705,22 @@
         const xL=l[i], xR=r[i]; yL=.992*(yL+xL-prevL); yR=.992*(yR+xR-prevR); prevL=xL; prevR=xR; l[i]=yL; r[i]=yR;
       }
       this.applyLofi();
+      // 小節構造の緩やかな音量包絡。バー境界で急に切らない。
+      // フィールド系は薄く、ビート系は空白と起伏が明瞭になる。
+      const c=this.composition;
+      const rhythmic=[.24,.84,.20,.62,.48,.91,.27,.63,.88,.51,.65,.85][this.engine];
+      const tl=c.timeline, len=tl.length;
+      for(let i=0;i<n;i++){
+        const v=i/Math.max(1,n-1)*(len-1),j=Math.floor(v),u=v-j;
+        const energy=tl[j]*(1-u)+tl[Math.min(len-1,j+1)]*u;
+        const floor=1-rhythmic*.65;
+        const g=floor+(1-floor)*energy;
+        l[i]*=g;r[i]*=g;
+      }
       let peak=0,sum=0;
       for(let i=0;i<n;i++){ peak=Math.max(peak,Math.abs(l[i]),Math.abs(r[i])); sum+=l[i]*l[i]+r[i]*r[i]; }
       const rms=Math.sqrt(sum/(2*n)); const targets=[.094,.118,.093,.108,.096,.109,.084,.104,.100,.090,.087,.111], target=targets[this.engine];
-      const gain=Math.min(2.8,target/Math.max(rms,1e-5),.72/Math.max(peak,1e-5));
+      const gain=Math.min(3.3,target/Math.max(rms,1e-5),.72/Math.max(peak,1e-5));
       for(let i=0;i<n;i++){ l[i]=Math.tanh(l[i]*gain*1.04)*.92; r[i]=Math.tanh(r[i]*gain*1.04)*.92; }
       const cross=Math.min(Math.floor(SR*.12),Math.floor(n/16));
       for(let j=0;j<cross;j++){ const fade=.5-.5*Math.cos(Math.PI*j/cross), end=n-1-j; l[j]*=fade; r[j]*=fade; l[end]*=fade; r[end]*=fade; }
@@ -620,7 +740,7 @@
         envelope[i]=clamp(envelope[i]/Math.max(mx,.0001)*.9,0,1);
         low[i]=clamp(low[i]/Math.max(lmx,.0001),0,1); mid[i]=clamp(mid[i]/Math.max(mmx,.0001),0,1); high[i]=clamp(high[i]/Math.max(hmx,.0001),0,1); hit[i]=clamp(hit[i]/Math.max(amx,.0001),0,1);
       }
-      return { sampleRate:SR,length:n,duration:this.duration,bpm:Math.round(this.bpm),engine:this.engine,name:this.name,variant:this.variantName,left:l,right:r,envelope,low,mid,high,hit,seed:this.seed,lofi:this.lofiAmount };
+      return { sampleRate:SR,length:n,duration:this.duration,bpm:Math.round(this.bpm),engine:this.engine,name:this.name,variant:this.variantName,left:l,right:r,envelope,low,mid,high,hit,seed:this.seed,lofi:this.lofiAmount,composition:this.composition };
     }
   }
   function synthesize(features,engine,seed){
@@ -648,5 +768,5 @@
     for(let i=0;i<n;i++){ v.setInt16(44+i*4,Math.round(clamp(data.left[i],-1,1)*32767),true); v.setInt16(46+i*4,Math.round(clamp(data.right[i],-1,1)*32767),true); }
     return new Blob([arr],{type:'audio/wav'});
   }
-  root.NWAudio={analyzeImage,engineWeights,chooseEngine,imageBpm,synthesize,makeBuffer,encodeWav,ENGINES,VARIANTS};
+  root.NWAudio={analyzeImage,engineWeights,chooseEngine,imageBpm,makeComposition,synthesize,makeBuffer,encodeWav,ENGINES,VARIANTS};
 })(window);

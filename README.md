@@ -1,48 +1,20 @@
-# NEGATIVE WEATHER v0.5.3 — Minimal Interface
+# NEGATIVE WEATHER v0.5.4 — Photo Score
 
-Turn a phone photograph into experimental music and a moving color image.
+A photograph becomes its own sound and moving image.
 
 ## Use
-1. **SHOOT** to take a photo or **USE PHOTO LIBRARY** to load one.
-2. **PLAY** starts the generated loop; **STOP** ends playback; **PLAY** restarts the loop.
-3. **MUTATE** generates another sound and visual variation from the same photo.
-4. **SAVE** exports a WAV audio loop or the current PNG frame.
+1. **SHOOT** to take a photo, or **USE PHOTO LIBRARY** to choose one.
+2. **PLAY / STOP** to hear the generated loop.
+3. **MUTATE** to explore another version of the same photo.
+4. **SAVE** to export a WAV loop or a PNG frame.
 
-## Sound engines
-VEIL, PULSE, CURRENT, PARTICLE, RELAY, RIFT, ASH, ORBIT,
-OBJECT, DUB TRACE, DUST LOOP, TOY HOUSE.
-
-OBJECT uses synthesized taps and resonances to suggest small physical objects. No external sound samples are used.
-
-## Visuals
-Eight motion behaviors, six light-leak color profiles, and three levels of motion activity, all weighted toward the current photograph. Color leak effects use soft, cached photographic masks instead of rectangular light overlays. The moving oval oil-film lens effects remain.
+## New in v0.5.4
+- Photo-driven musical structure: notes, rests, density, bar dynamics and harmonic-change speed.
+- A shared musical timeline guides color drift, oval lens motion and photographic transformations.
+- The photo still biases the engine selection. MUTATE does not cycle through all engines.
+- All 12 sound engines, 8 visual families, 6 light-leak colors and the minimal GUI remain.
 
 ## Publish
-Upload the extracted files to the root of the `main` branch in GitHub and enable **Settings → Pages → Deploy from a branch → main / (root)**.
+Upload the extracted files to the root of a GitHub repository. Enable **Settings → Pages → Deploy from a branch → main / (root)**.
 
-Photos are processed on-device. WAV and PNG downloads use the browser's share/download support. iPhone Safari performance depends on the device.
-
-## v0.5.2 motion revision
-- Eight distinct internal motion families: LENS FLOAT, TIDAL SHEAR, IRIS, GLITCH BLOOM, SOLVENT, GHOST FIELD, CHROMA MORPH and COLLAPSE/RETURN.
-- Stronger distinction between QUIET, MEDIUM and ACTIVE motion.
-- Organic soft-masked photo layers are baked once per image or mutation. No heavy per-pixel processing inside the animation loop.
-- Existing 12 sound engines, UI, oil-film lens and WAV/PNG export are retained.
-- **Photo-led selection**: each photograph favors certain sound and movement families.
-- MUTATE explores biased variations; it does not cycle through all engines or guarantee variety.
-- A different photograph can reveal different tendencies. The image is the input, not just a visual background.
-
-
-## v0.5.2 — Breathing Field
-- Full-frame breathing scale and slight geometric warp across all motion types.
-- Restored the soft moving oval refraction field.
-- Restored narrow horizontal and vertical source-pixel displacement, without glowing boxes.
-- Eight existing motion families, six color variations, twelve audio engines remain.
-- The 12 sound-generating algorithms are retained; the image-dependent engine selection is more strongly biased.
-
-
-## v0.5.3 — Minimal Interface / Maintenance
-- Removed decorative text overlays from the image frame.
-- Shows the audio engine, BPM, loop duration, playback status, and progress below the photograph.
-- Keeps the 12 audio engines, photo-weighted mutation, 8 visual motion families, and 6 light-leak color profiles.
-- Reduced unnecessary image buffers and improved audio restart and image-loading lifecycle.
-- The GUI remains SHOOT / MUTATE / PLAY / SAVE.
+Processing is local in the browser. Export works without a server. Performance varies by device; iPhone Safari has not been tested for this version.

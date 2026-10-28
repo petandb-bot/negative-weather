@@ -63,6 +63,7 @@
       this.lastDraw=0; this.eventPulse=0; this.prevHit=0; this.lastRenderError=null;
       this.recipe=0; this.frameCost=0; this.drawCount=0; this.motionHistory=[];
       this.duration=20; this.history=null; this.historyAt=-100; this.sceneIndex=0;
+      this.composition=null;
       this.colorProfile=0; this.motionProfile=0; this.colorLayers=[]; this.motionLayers=[]; this.cachedPatches=null;
       this.activity=1; this.visualFamily=0; this.motionMutation=0; this.renderErrors=0;
       this.signalDirection=0; this.signalDensity=0; this.baseBreath=0;
@@ -133,6 +134,10 @@
       this.history=null;this.historyAt=-100;this.sceneIndex=0;
       this.cachedPatches=this.makePatches(); this.prepareColorLayers(); this.prepareMotionLayers();
       this.safeRender();
+    }
+    setComposition(composition){
+      // 音楽が持つ「空白」「発展」「和声変化」を映像の時間構造にも共有する。
+      this.composition=composition||null;
     }
     setAudioState(state){
       const next=state||this.audio;
@@ -567,22 +572,30 @@
       const high=this.audio.high||0,hit=this.audio.hit||0,pulse=this.eventPulse||0;
       const hueDrift=(t*13+high*65+pulse*120+(Number(this.features.hue)||0)*180)%360;
       const patches=this.cachedPatches||this.makePatches();
-      const jump=hit*.45+pulse*.55;
-      // 反復する呼吸ではなく、発芽→増殖→逸脱→沈静という時間的な起伏。
-      // 低音エンジンでは大きく伸び、ビート系では短いピークを作る。
-      const scene=loopPhase<.2?(.16+.56*loopPhase/.2):
+      // タイムラインは音声から生成済み。音が少ない区間は写真の動きを抑え、
+      // 次の和声へ移る瞬間にレンズと色空間がわずかに成長する。
+      const comp=this.composition;
+      const structureIndex=comp?Math.min(comp.timeline.length-1,Math.floor(loopPhase*comp.timeline.length)):0;
+      const arrangement=comp?(this.playing?(this.audio.arrangement??comp.timeline[structureIndex]):comp.timeline[structureIndex]):.6;
+      const turn=comp?(this.playing?(this.audio.turn??comp.transition[structureIndex]):comp.transition[structureIndex]):0;
+      const stillness=comp?comp.silence:0.2;
+      const jump=hit*.38+pulse*.45+turn*.12;
+      // 反復する呼吸だけでなく、写真固有の音楽的な起伏も共有する。
+      const oldScene=loopPhase<.2?(.16+.56*loopPhase/.2):
         loopPhase<.50?(.72+.20*Math.sin((loopPhase-.20)/.30*Math.PI)):
         loopPhase<.78?(.88+.12*Math.sin((loopPhase-.50)/.28*Math.PI)):
         (.88-.63*(loopPhase-.78)/.22);
+      const scene=clamp(oldScene*.45+arrangement*.43+turn*.14,.12,1.08);
       const engineGain=[1,.95,.76,1.08,1.18,1.10,.72,.88,1.12,.8,.85,1.16][this.engine]||1;
-      const amount=24*engineGain*this.activity*(.55+scene*.8)*(1+env*.18+jump*.62);
+      const amount=24*engineGain*this.activity*(.39+scene*.93)*(1+env*.12+jump*.58)*(1-stillness*.12);
 
       // ネイティブ描画を中心に再構成。毎フレーム全画素をJavaScriptで走査しない。
       // iPhone Safariでの描画負荷を大幅に軽減し、音のアタックにも追従しやすくする。
       ctx.save();
       ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over'; ctx.filter='none';
       ctx.clearRect(0,0,w,h);
-      this.drawBreathingBase(ctx,photo,w,h,t,loopPhase,scene,low,mid,high,hit);
+      this.drawBreathingBase(ctx,photo,w,h,t,loopPhase,scene,low*(.76+.28*arrangement),mid,high,hit);
+      // 音の空白では写真が無音に見えないよう、微細な漂流だけを残す。
       // 強い動作の一部では写真全体も変位させる。
       // 拡大した全面像を重ねるので、途中に直線的な切断面を作らない。
       if(this.activity>1 && [1,3,6,7].includes(this.visualFamily)){
@@ -607,7 +620,7 @@
       // 深さの違う楕円状の局所屈折を復活させる。
       this.drawLensRefraction(ctx,w,h,t,low,mid,high,jump,scene);
       // 写真そのものの色調が局所的に分化する。単なる明るい楕円は追加しない。
-      this.drawColorEvolution(ctx,w,h,t,scene,env,low,mid,high,jump);
+      this.drawColorEvolution(ctx,w,h,t,scene,env,low,mid,high,jump+turn*.12);
       // オイルレンズの馴染みを残す、共通の柔らかい局所屈折（最大2領域）。
       if(this.visualFamily===0 || this.visualFamily===2 || this.visualFamily===4){
         for(let i=0;i<(this.visualFamily===2?2:1);i++){
@@ -642,7 +655,7 @@
       const palette=this.features.palette||[[.5,.6,.7],[.2,.7,.8],[.8,.3,.5]];
       // 常時3つの色膜を重ねない。動作文法と時間帯によって現れる回数を変える。
       const lensCount=([2,1,3,1,2,2,1,1])[this.visualFamily];
-      const lensFade=this.visualFamily===2?(.58+.42*Math.sin(t*.29+this.seed*6)):(.34+.62*scene);
+      const lensFade=this.visualFamily===2?(.58+.42*Math.sin(t*.29+this.seed*6)):(.24+.62*scene+.12*turn);
       for(let i=0;i<lensCount;i++){
         const p=patches[i],band=i===0?low:i===1?mid:high;
         const x=(p.x+Math.sin(t*(.16+i*.03)+this.seed+i)*(.03+.03*band)+this.audio.phase*.012*(i+1))*w;
