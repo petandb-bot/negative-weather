@@ -55,8 +55,8 @@
   class PhotoRenderer {
     constructor(canvas){
       this.canvas=canvas;
-      this.ctx=canvas.getContext('2d',{willReadFrequently:true});
-      this.image=null; this.basePhoto=null; this.sourcePixels=null; this.framePixels=null;
+      this.ctx=canvas.getContext('2d');
+      this.image=null; this.basePhoto=null;
       this.energy=0; this.engine=0; this.seed=.5; this.t=0; this.playing=false; this.bpm=100;
       this.features={motion:.4,hue:0,saturation:0,warm:0,cool:0,palette:[[.45,.5,.5],[.2,.7,.8],[.8,.3,.5]]};
       this.audio={env:0,low:0,mid:0,high:0,hit:0,phase:0}; this.hasPhoto=false;
@@ -72,7 +72,10 @@
     resize(){
       const box=this.canvas.getBoundingClientRect(); if(!box.width||!box.height) return;
       const scale=Math.min(window.devicePixelRatio||1,1.10,430/Math.max(box.width,box.height));
-      this.canvas.width=Math.max(1,Math.round(box.width*scale)); this.canvas.height=Math.max(1,Math.round(box.height*scale));
+      const nextW=Math.max(1,Math.round(box.width*scale));
+      const nextH=Math.max(1,Math.round(box.height*scale));
+      if(this.canvas.width===nextW && this.canvas.height===nextH) return;
+      this.canvas.width=nextW; this.canvas.height=nextH;
       if(this.image) { this.prepare2D(); this.prepareColorLayers(); this.prepareMotionLayers(); }
       if(this.hasPhoto) this.safeRender();
     }
@@ -86,10 +89,10 @@
       if(!this.ctx||!this.image) return;
       const w=this.canvas.width,h=this.canvas.height;
       const src=document.createElement('canvas'); src.width=w; src.height=h;
-      const g=src.getContext('2d',{willReadFrequently:true});
+      const g=src.getContext('2d');
       const scale=Math.max(w/this.image.width,h/this.image.height);
       g.drawImage(this.image,(w-this.image.width*scale)/2,(h-this.image.height*scale)/2,this.image.width*scale,this.image.height*scale);
-      this.basePhoto=src; this.sourcePixels=g.getImageData(0,0,w,h).data; this.framePixels=this.ctx.createImageData(w,h);
+      this.basePhoto=src;
     }
     setMood(index,seed,features={},bpm=100,mutation=0,duration=20){
       this.engine=index; this.seed=(seed%100000)/100000; this.duration=duration;
@@ -522,7 +525,7 @@
       ctx.closePath();
     }
     render(){
-      if(!this.hasPhoto||!this.sourcePixels||!this.framePixels) return;
+      if(!this.hasPhoto||!this.basePhoto) return;
       this.render2D();
     }
     safeRender(){

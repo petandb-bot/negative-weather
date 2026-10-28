@@ -1,10 +1,10 @@
-# NEGATIVE WEATHER v0.5.2 — Motion Range
+# NEGATIVE WEATHER v0.5.3 — Minimal Interface
 
 Turn a phone photograph into experimental music and a moving color image.
 
 ## Use
 1. **SHOOT** to take a photo or **USE PHOTO LIBRARY** to load one.
-2. **PLAY** starts the generated loop; **STOP** pauses it.
+2. **PLAY** starts the generated loop; **STOP** ends playback; **PLAY** restarts the loop.
 3. **MUTATE** generates another sound and visual variation from the same photo.
 4. **SAVE** exports a WAV audio loop or the current PNG frame.
 
@@ -38,3 +38,11 @@ Photos are processed on-device. WAV and PNG downloads use the browser's share/do
 - Restored narrow horizontal and vertical source-pixel displacement, without glowing boxes.
 - Eight existing motion families, six color variations, twelve audio engines remain.
 - The 12 sound-generating algorithms are retained; the image-dependent engine selection is more strongly biased.
+
+
+## v0.5.3 — Minimal Interface / Maintenance
+- Removed decorative text overlays from the image frame.
+- Shows the audio engine, BPM, loop duration, playback status, and progress below the photograph.
+- Keeps the 12 audio engines, photo-weighted mutation, 8 visual motion families, and 6 light-leak color profiles.
+- Reduced unnecessary image buffers and improved audio restart and image-loading lifecycle.
+- The GUI remains SHOOT / MUTATE / PLAY / SAVE.
