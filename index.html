@@ -1,111 +1,82 @@
-<!doctype html>
-<html lang="en" data-mode="solar">
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-  <meta name="theme-color" content="#c1c8dd">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Incident Archive">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="description" content="Incident Archive — photographic chance engine">
-  <title>Incident Archive</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=0298">
-  <link rel="apple-touch-icon" href="./icons/icon-180.png?v=0298">
-  <link rel="stylesheet" href="./style.css?v=0298">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111514" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="description" content="A photograph becomes a temporary sound world." />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./assets/icon-192.png" />
+  <link rel="apple-touch-icon" href="./assets/icon-192.png" />
+  <link rel="stylesheet" href="./style.css?v=0.5.2" />
+  <title>NEGATIVE WEATHER — photograph to sound</title>
 </head>
 <body>
-  <main class="app-shell">
+  <main class="shell">
     <header class="masthead">
-      <div class="wordmark" aria-label="Incident Archive"><span>INCIDENT</span><span>ARCHIVE</span></div>
-      <span class="version">0.2.9.8</span>
-      <button id="openPhotoTop" class="open-top" type="button" title="Open a photo" aria-label="Open a photo">
-        <span class="menu-lines" aria-hidden="true"><i></i><i></i><i></i></span>
-      </button>
+      <div class="brand">
+        <div class="brand-eyebrow"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span> FIELD RECORDS / 005.2</div>
+        <h1>NEGATIVE<br /><em>WEATHER</em></h1>
+      </div>
+      <div class="mast-side">PHOTO<br />→<br />SOUND</div>
     </header>
 
-    <section class="image-world" id="stage" aria-label="Photograph preview">
-      <div id="canvasMount" class="canvas-mount"></div>
-      <div id="emptyState" class="empty-state">
-        <div class="empty-glow" aria-hidden="true"></div>
-        <div class="empty-copy"><span class="empty-index">I / A · 029</span><span class="empty-heading">AN IMAGE<br>CAN BECOME<br>AN INCIDENT.</span></div>
-        <button id="openPhotoPrimary" class="open-primary" type="button">
-          <svg viewBox="0 0 28 28" aria-hidden="true"><path d="M14 5v18M5 14h18" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
-          <span>OPEN PHOTO</span>
-        </button>
+    <section class="art-frame" id="artFrame" aria-label="Animated photograph">
+      <canvas id="art" role="img" aria-label="Animated color photograph with oil-film lens drift and audio-linked motion"></canvas>
+      <div class="empty-state" id="emptyState">
+        <div class="empty-sigil" aria-hidden="true">◌</div>
+        <p>THE IMAGE<br />IS NOT YET HERE</p>
+        <small>CAPTURE AN INSTANT / RELEASE ITS WEATHER</small>
       </div>
-      <div id="renderOverlay" class="render-overlay" hidden>
-        <span class="activity-indicator"></span><span id="renderLabel">RENDERING</span>
-      </div>
+      <div class="corner-label top-left" id="photoLabel">NO IMAGE</div>
+      <div class="corner-label top-right" id="engineLabel">— / —</div>
+      <div class="corner-label bottom-left" id="seedLabel">FRAME: 0000</div>
+      <div class="corner-label bottom-right"><span id="statusDot" class="status-dot"></span><span id="stageLabel">STANDBY</span></div>
+      <div class="busy" id="busy" hidden><span class="busy-spinner"></span><span id="busyText">READING LIGHT</span></div>
     </section>
 
-    <nav class="modes" role="group" aria-label="Photo processing mode">
-      <button class="mode active" data-mode="SOLAR" type="button" aria-pressed="true">SOLAR</button>
-      <button class="mode" data-mode="CHEMICAL" type="button" aria-pressed="false">CHEMICAL</button>
-      <button class="mode" data-mode="REGISTER" type="button" aria-pressed="false">REGISTER</button>
-      <button class="mode" data-mode="LEAK" type="button" aria-pressed="false">LEAK</button>
-    </nav>
+    <section class="readout" aria-live="polite">
+      <div class="readout-primary">
+        <span class="readout-kicker">CURRENT CONDITION</span>
+        <strong id="conditionLabel">UNFORMED</strong>
+      </div>
+      <div class="readout-meta">
+        <span id="detailLabel">—</span><span id="durationLabel">00:00</span>
+      </div>
+    </section>
+    <div class="track" aria-hidden="true"><span id="progressBar"></span></div>
 
-    <div class="photo-meta" aria-label="Photo information">
-      <span id="fileMeta">NO IMAGE SELECTED</span>
-      <button id="backButton" class="back-button" type="button" disabled>BACK</button>
-      <span id="dateMeta">INCIDENT / ARCHIVE</span>
+    <section class="controls" aria-label="Main controls">
+      <button class="control control-primary" id="shootBtn" type="button"><span class="control-icon">◎</span>SHOOT</button>
+      <button class="control" id="mutateBtn" type="button" disabled><span class="control-icon">⟳</span>MUTATE</button>
+      <button class="control" id="playBtn" type="button" disabled><span class="control-icon" id="playIcon">▷</span><span id="playText">PLAY</span></button>
+      <button class="control" id="saveBtn" type="button" disabled><span class="control-icon">↓</span>SAVE</button>
+    </section>
+
+    <div class="footbar">
+      <button id="libraryBtn" class="text-button" type="button">↗ USE PHOTO LIBRARY</button>
+      <span class="version">v0.5.2 · BREATHING FIELD</span>
     </div>
-
-    <section class="control-sheet" aria-label="Photo controls">
-      <div class="action-row">
-        <button id="mutateButton" class="action action-mutate" type="button" aria-label="Mutate photo">
-          <svg class="action-icon" viewBox="0 0 80 64" aria-hidden="true">
-            <rect x="30" y="6" width="30" height="30" fill="var(--hot-soft)" opacity=".83"/>
-            <rect x="18" y="24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8"/>
-          </svg>
-          <span>MUTATE</span>
-        </button>
-        <button id="editToggle" class="action action-edit" type="button" aria-expanded="false" aria-controls="editPanel" aria-label="Toggle edit parameters">
-          <svg class="action-icon" viewBox="0 0 80 64" aria-hidden="true">
-            <path d="M15 16h50M15 32h50M15 48h50" fill="none" stroke="currentColor" stroke-width="1.9"/>
-            <circle cx="36" cy="16" r="5.4" fill="var(--paper)" stroke="currentColor" stroke-width="1.9"/>
-            <circle cx="49" cy="32" r="5.4" fill="var(--paper)" stroke="var(--hot)" stroke-width="1.9"/>
-            <circle cx="30" cy="48" r="5.4" fill="var(--paper)" stroke="currentColor" stroke-width="1.9"/>
-          </svg>
-          <span>EDIT <small id="editChevron" aria-hidden="true">+</small></span>
-        </button>
-        <button id="saveButton" class="action action-save" type="button" disabled aria-label="Save processed photo">
-          <svg class="action-icon" viewBox="0 0 80 64" aria-hidden="true">
-            <path d="M40 5v36M25 29l15 15 15-15M18 56h44" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="miter"/>
-          </svg>
-          <span>SAVE</span>
-        </button>
-      </div>
-      <div id="exportReady" class="export-ready" hidden role="status" aria-live="polite">
-        <span id="readyStatus" class="export-ready-status">PNG READY</span>
-        <div class="export-ready-actions">
-          <a id="readyDownload" class="export-ready-link" href="#" download>DOWNLOAD PNG</a>
-          <button id="readyShare" class="export-ready-link" type="button" hidden>SHARE / SAVE TO PHOTOS</button>
-        </div>
-      </div>
-      <section id="editPanel" class="edit-panel" hidden>
-        <div class="parameter"><div class="parameter-head"><label for="amountSlider">AMOUNT</label><output id="amountValue">88</output></div><input id="amountSlider" type="range" min="0" max="100" value="88" step="1"></div>
-        <div class="parameter"><div class="parameter-head"><label for="chanceSlider">CHANCE</label><output id="chanceValue">80</output></div><input id="chanceSlider" type="range" min="0" max="100" value="80" step="1"></div>
-        <div class="parameter"><div class="parameter-head"><label for="preserveSlider">PRESERVE</label><output id="preserveValue">22</output></div><input id="preserveSlider" type="range" min="0" max="100" value="22" step="1"></div>
-        <div class="export-row"><label for="exportSize">EXPORT SIZE</label><select id="exportSize"><option value="1800">1800 PX</option><option value="2600" selected>2600 PX</option><option value="3200">3200 PX</option></select></div>
-      </section>
-    </section>
-
-    <div class="footer-bar" aria-hidden="true"><span></span><span></span></div>
-    <div class="engine-hooks" aria-hidden="true"><span id="statusText">READY / ADD A PHOTO</span><span id="variationMeta">INCIDENT / —</span></div>
-    <div id="errorPanel" class="error-panel" role="alert" hidden><strong>IMAGE ERROR</strong><span id="errorDetail"></span></div>
+    <p class="help" id="helpText">Eight sound engines and six motion styles. Photo and sound stay linked.</p>
   </main>
-  <input id="photoInput" type="file" accept="image/*" hidden>
-  <script src="https://cdn.jsdelivr.net/npm/p5@1.11.13/lib/p5.min.js"></script>
-  <!-- Independent shader engines; load before main sketch. -->
-  <script src="./engines/chemical.js?v=0298"></script>
-  <script src="./engines/leak.js?v=0298"></script>
-  <script src="./sketch.js?v=0298"></script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?v=0298', {updateViaCache:'none'}).catch(console.warn));
-    }
-  </script>
+
+  <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden />
+  <input id="libraryInput" type="file" accept="image/*" hidden />
+
+  <div class="modal" id="saveModal" hidden>
+    <div class="modal-shade" id="modalShade"></div>
+    <div class="modal-content" role="dialog" aria-modal="true" aria-label="Save output">
+      <span class="modal-kicker">EXPORT THE WEATHER</span>
+      <button type="button" id="saveWavBtn">SOUND <small>WAV / 22.05 KHZ</small></button>
+      <button type="button" id="savePngBtn">IMAGE <small>PNG / CURRENT FRAME</small></button>
+      <button type="button" id="closeModal" class="modal-close">CANCEL</button>
+    </div>
+  </div>
+
+  <script src="./audio-engine.js?v=0.5.2"></script>
+  <script src="./visual-engine.js?v=0.5.2"></script>
+  <script src="./app.js?v=0.5.2"></script>
 </body>
 </html>
