@@ -12,7 +12,8 @@
       this.lastDraw=0; this.eventPulse=0; this.prevHit=0; this.lastRenderError=null;
       this.recipe=0; this.frameCost=0; this.drawCount=0; this.motionHistory=[];
       this.duration=20; this.history=null; this.historyAt=-100; this.sceneIndex=0;
-      this.colorProfile=0; this.motionProfile=0; this.colorLayers=[]; this.cachedPatches=null;
+      this.colorProfile=0; this.motionProfile=0; this.colorLayers=[]; this.motionLayers=[]; this.cachedPatches=null;
+      this.activity=1; this.visualFamily=0; this.motionMutation=0; this.renderErrors=0;
       this.resize(); window.addEventListener('resize',()=>this.resize(),{passive:true});
       requestAnimationFrame(t=>this.frame(t));
     }
@@ -20,12 +21,12 @@
       const box=this.canvas.getBoundingClientRect(); if(!box.width||!box.height) return;
       const scale=Math.min(window.devicePixelRatio||1,1.10,430/Math.max(box.width,box.height));
       this.canvas.width=Math.max(1,Math.round(box.width*scale)); this.canvas.height=Math.max(1,Math.round(box.height*scale));
-      if(this.image) { this.prepare2D(); this.prepareColorLayers(); }
+      if(this.image) { this.prepare2D(); this.prepareColorLayers(); this.prepareMotionLayers(); }
       if(this.hasPhoto) this.safeRender();
     }
     setPhoto(image){
       this.image=image; this.hasPhoto=true; this.history=null;this.historyAt=-100;this.prepare2D();
-      this.cachedPatches=this.makePatches(); this.prepareColorLayers();
+      this.cachedPatches=this.makePatches(); this.prepareColorLayers(); this.prepareMotionLayers();
       // 写真の登録は描画エラーから独立させる。初期化前でも静止画を表示できる。
       this.safeRender();
     }
@@ -43,13 +44,21 @@
       this.features={hue:0,saturation:0,warm:0,cool:0,...features};
       // 写真の固有値から開始位置を決め、MUTATEでは必ず次の動作文法に進む。
       // 最初の6回は重複しないが、音響エンジン選択には影響させない。
-      this.recipe=(((features.hash>>>0)%6)+(mutation%6))%6;
-      // 動き・色変異・強度は独立したDNAとし、同じ映像結果の連続を避ける。
-      this.colorProfile=((((features.hash>>>7)%6)+mutation)%6);
-      this.motionProfile=((((features.hash>>>14)%3)+Math.floor(mutation/2))%3);
+      // 音響エンジンとは独立した8種類の映像文法。
+      // 初回は写真の特徴、以後8回のMUTATEで全種類を一巡する。
+      const hash=features.hash>>>0;
+      this.visualFamily=(hash%8 + mutation%8)%8;
+      this.recipe=this.visualFamily;
+      this.colorProfile=((((hash>>>7)%6)+mutation)%6);
+      // 静・中・動の区別を拡大。ビート系は動きが強くなるが、MUTATEで静的な結果も生じる。
+      const rhythmic=[0,1,0,1,0,1,0,1,1,0,1,1][index]||0;
+      const base=(Math.floor(hash/17)+mutation*2+rhythmic)%3;
+      this.motionProfile=base;
+      this.activity=[.40,1.05,2.45][base];
+      this.motionMutation=mutation;
       this.bpm=bpm; this.t=0; this.eventPulse=0; this.prevHit=0;
       this.history=null;this.historyAt=-100;this.sceneIndex=0;
-      this.cachedPatches=this.makePatches(); this.prepareColorLayers();
+      this.cachedPatches=this.makePatches(); this.prepareColorLayers(); this.prepareMotionLayers();
       this.safeRender();
     }
     setAudioState(state){
@@ -141,11 +150,131 @@
         this.colorLayers.push({canvas:layer,patch:p,rx,ry});
       }
     }
+    prepareMotionLayers(){
+      // 静止写真から柔らかい局所像を作る。高負荷なピクセル加工はMUTATE時だけ。
+      this.motionLayers=[];
+      if(!this.basePhoto) return;
+      const w=this.canvas.width,h=this.canvas.height, patches=this.cachedPatches||this.makePatches();
+      const softness=this.motionProfile===2?1.2:1;
+      for(let i=0;i<4;i++){
+        const p=patches[i%patches.length];
+        const rx=Math.min(w,h)*(.27+(.055*i))*softness;
+        const ry=rx*(.72+.14*Math.sin(this.seed*19+i*1.7));
+        const x=p.x*w,y=p.y*h;
+        const layer=document.createElement('canvas'); layer.width=w; layer.height=h;
+        const g=layer.getContext('2d',{alpha:true});
+        g.drawImage(this.basePhoto,0,0,w,h);
+        const mask=document.createElement('canvas'); mask.width=w; mask.height=h;
+        const m=mask.getContext('2d',{alpha:true});
+        m.save(); m.translate(x,y);m.rotate(Math.sin(i*2.3+this.seed*9)*.26);
+        m.scale(1,Math.max(.4,ry/rx));
+        const gradient=m.createRadialGradient(0,0,rx*.05,0,0,rx);
+        gradient.addColorStop(0,'rgba(255,255,255,1)');
+        gradient.addColorStop(.40,'rgba(255,255,255,.96)');
+        gradient.addColorStop(.65,'rgba(255,255,255,.72)');
+        gradient.addColorStop(.86,'rgba(255,255,255,.28)');
+        gradient.addColorStop(1,'rgba(255,255,255,0)');
+        m.fillStyle=gradient;m.fillRect(-rx,-rx,rx*2,rx*2);m.restore();
+        g.globalCompositeOperation='destination-in';g.drawImage(mask,0,0);
+        g.globalCompositeOperation='source-over';
+        this.motionLayers.push({canvas:layer,patch:p,cx:x,cy:y,rx,ry});
+      }
+    }
+    // ソフトな領域像を平行移動・拡大・回転して再生する。矩形のマスクは生成しない。
+    drawSoftLayer(ctx,layer,shiftX,shiftY,scale,rotation,alpha,mode='source-over'){
+      const w=this.canvas.width,h=this.canvas.height;
+      ctx.save();
+      ctx.globalAlpha=clamp(alpha,0,.85);
+      ctx.globalCompositeOperation=mode;
+      ctx.translate(layer.cx+shiftX,layer.cy+shiftY);
+      ctx.rotate(rotation);ctx.scale(scale,scale);ctx.translate(-layer.cx,-layer.cy);
+      ctx.drawImage(layer.canvas,0,0,w,h);
+      ctx.restore();
+    }
+    drawSoftEvolution(ctx,w,h,t,scene,low,mid,high,hit,phase){
+      const family=this.visualFamily,act=this.activity, patches=this.motionLayers;
+      const beat=t*this.bpm/60;
+      const event=clamp(hit*.6+this.eventPulse*.8+high*.25,0,1);
+      const grow=clamp(Math.sin(Math.PI*phase)*1.1,0,1);
+      const base=Math.min(w,h);
+      // 分岐ごとに動く原理を変える。全ての結果に規則的な楕円を一律適用しない。
+      if(family===0){
+        // LENS FLOAT — 静かな奥行き。画像の大部分はそのまま、油膜レンズがゆっくり移動。
+        for(let i=0;i<3;i++){
+          const a=t*(.24+i*.05)+i*2.1;
+          this.drawSoftLayer(ctx,patches[i], Math.sin(a)*base*.06*act,Math.cos(a*.8)*base*.035*act,
+            1+Math.sin(a*.65)*.035*act,Math.sin(a*.4)*.02*act,.28+scene*.18);
+        }
+      } else if(family===1){
+        // TIDAL SHEAR — 複数の層が逆向きに流れる。動く距離の差が主役。
+        for(let i=0;i<4;i++){
+          const a=t*(.35+i*.09)+i*2.8;
+          const drift=(.18+.075*i)*base*act;
+          this.drawSoftLayer(ctx,patches[i],Math.sin(a)*drift,Math.cos(a*.67)*drift*.38,
+            1+Math.sin(a*.7)*.065*act,Math.sin(a*.25)*.035*act,.25+scene*.28);
+        }
+      } else if(family===2){
+        // IRIS — 一つの大きな楕円を開閉させ、局所写真が異なる倍率へ移行する。
+        for(let i=0;i<3;i++){
+          const a=t*.32+i*1.9,open=.5+.5*Math.sin(a);
+          const size=1+(open*.40+grow*.30)*act;
+          this.drawSoftLayer(ctx,patches[i], Math.sin(a*.6)*base*.07*act,
+            Math.cos(a*.72)*base*.05*act,size,Math.sin(a*.36)*.045*act,
+            .22+open*.40+event*.12);
+        }
+      } else if(family===3){
+        // GLITCH BLOOM — 高速ビートに合わせて像が短時間だけ飛ぶ。普段は間を残す。
+        const phaseBeat=(beat*2)%1;
+        const kick=Math.pow(Math.max(0,1-phaseBeat*2.5),2);
+        for(let i=0;i<3;i++){
+          const a=Math.floor(beat*2+i*3)*1.37;
+          const dx=Math.sin(a+i*2.2)*base*(.16+.08*i)*act*(kick+.25*event);
+          const dy=Math.cos(a*.8+i)*base*.10*act*(kick+.15*event);
+          this.drawSoftLayer(ctx,patches[i],dx,dy,1+kick*.11*act,Math.sin(a)*.05*act,
+            clamp(.12+kick*.48+event*.25,0,.78));
+        }
+      } else if(family===4){
+        // SOLVENT — 元の写真が複数の異なる露光像へ滲み広がり、戻る。
+        for(let i=0;i<4;i++){
+          const a=t*(.22+i*.08)+patches[i].patch.phase;
+          this.drawSoftLayer(ctx,patches[i],Math.sin(a)*base*.12*act,
+            Math.cos(a*.85)*base*.12*act,1+(grow*.22+Math.sin(a*.8)*.11)*act,
+            Math.cos(a*.5)*.07*act,.30+scene*.28, i%2?'screen':'source-over');
+        }
+      } else if(family===5){
+        // GHOST FIELD — 写真の時間差の像。過去のフレームは後段で混合。
+        for(let i=0;i<3;i++){
+          const a=t*(.16+i*.07)+i*2.8;
+          this.drawSoftLayer(ctx,patches[i],Math.sin(a)*base*.13*act,
+            Math.cos(a*.75)*base*.08*act,1+Math.sin(a*.48)*.1*act,
+            Math.sin(a*.3)*.06*act,.17+scene*.16,'screen');
+        }
+      } else if(family===6){
+        // CHROMA MORPH — 大きな写真像と色変換層を異なる方向に移す。
+        for(let i=0;i<4;i++){
+          const a=t*(.31+i*.11)+i*1.67;
+          this.drawSoftLayer(ctx,patches[i],Math.sin(a)*base*.15*act,
+            Math.cos(a*.55)*base*.16*act,1+Math.sin(a*.55)*.16*act,
+            Math.sin(a*.62)*.09*act,.27+scene*.25);
+        }
+      } else {
+        // COLLAPSE / RETURN — 一時的に写真を大きく崩す。最終的に原像へ回帰。
+        const collapse=Math.pow(Math.sin(Math.PI*phase),1.2);
+        const advance=act*(.30+.70*collapse);
+        for(let i=0;i<4;i++){
+          const a=t*(.42+i*.09)+i*2.1;
+          const shift=base*(.20+i*.08)*advance;
+          this.drawSoftLayer(ctx,patches[i],Math.sin(a)*shift,
+            Math.cos(a*.73)*shift*.8,1+(collapse*.50+.10*Math.sin(a))*advance,
+            Math.sin(a*.8)*.13*advance,.25+collapse*.35);
+        }
+      }
+    }
     drawColorEvolution(ctx,w,h,t,scene,env,low,mid,high,jump){
       if(!this.colorLayers.length)return;
       // 光が現れる・溶ける・退色する周期を色系統ごとに分ける。
       const p=this.colorProfile, profileStrength=[.43,.52,.48,.40,.46,.45][p];
-      const act=this.motionProfile===0?.70:this.motionProfile===2?1.18:1;
+      const act=this.motionProfile===0?.70:this.motionProfile===2?1.35:1;
       const freq=(p===4?.45:p===1?.21:.32);
       for(let i=0;i<this.colorLayers.length;i++){
         const layer=this.colorLayers[i];
@@ -154,12 +283,13 @@
         if(p===1)appear=Math.pow(appear,.65); // melt: long decay
         if(p===3)appear=.38+.32*Math.cos(t*.16+i*3); // bleaching, gradual
         if(p===4)appear=Math.pow(appear,1.75); // phosphor, sparse
-        let alpha=(.10+appear*profileStrength)*( .4+scene*.55 )*act;
+        const visualBoost=[.80,1.10,1.0,1.0,1.25,.80,1.42,1.12][this.visualFamily];
+        let alpha=(.10+appear*profileStrength)*(.4+scene*.55)*act*visualBoost;
         alpha*=1+Math.min(.35,jump*.2+high*.16+mid*.12);
         if(p===2)alpha*=.80+Math.sin(t*.34+i*2)*.14;
-        const x=Math.sin(t*(.17+i*.12)+layer.patch.phase)*(12+mid*14+jump*8)*act;
-        const y=Math.cos(t*(.13+i*.08)+layer.patch.phase)*(10+low*12)*act;
-        const zoom=1+(p===1?.04:p===3?.02:.015)*Math.sin(t*.3+i*1.7)+jump*.02;
+        const x=Math.sin(t*(.17+i*.12)+layer.patch.phase)*(12+mid*22+jump*12)*act;
+        const y=Math.cos(t*(.13+i*.08)+layer.patch.phase)*(10+low*18)*act;
+        const zoom=1+((p===1?.08:p===3?.05:.045)*act)*Math.sin(t*.3+i*1.7)+jump*.035*act;
         ctx.save();ctx.globalAlpha=clamp(alpha,0,.64);
         ctx.translate(w/2+x,h/2+y);ctx.scale(zoom,zoom);ctx.translate(-w/2,-h/2);
         ctx.drawImage(layer.canvas,0,0,w,h);
@@ -271,90 +401,8 @@
     // 写真のカラーと輪郭を守ったまま、動作そのものを6つに分ける。
     // どの文法も少数のdrawImageだけを使い、全画素のJavaScript処理は行わない。
     drawMotion(ctx,photo,w,h,t,beat,amount,patches,low,mid,high,jump,scene){
-      const recipe=this.recipe, seed=this.seed;
-      ctx.save(); ctx.globalCompositeOperation='source-over'; ctx.filter='none';
-      if(recipe===0){
-        // DRIFT：丸い油膜窓がゆっくり位置を変えながら写真を屈折させる。
-        for(let i=0;i<3;i++){
-          const p=patches[i];
-          const x=(p.x+.06*Math.sin(t*.19+i+seed*7))*w;
-          const y=(p.y+.05*Math.cos(t*.17+i*.7+seed*5))*h;
-          const rx=(p.rx*1.35+.06+.04*Math.sin(i+t*.3))*w;
-          const ry=(p.ry*1.05+.04+.03*Math.cos(i+t*.24))*h;
-          const offX=Math.sin(t*(.45+i*.08)+p.phase)*amount*(.45+i*.16);
-          const offY=Math.cos(t*(.39+i*.06)+p.phase)*amount*(.30+i*.10);
-          ctx.save();ctx.beginPath();ctx.ellipse(x,y,rx,ry,.18*Math.sin(t*.2+i),0,Math.PI*2);ctx.clip();
-          ctx.globalAlpha=.18+.18*scene;
-          ctx.drawImage(photo,offX,offY,w,h);ctx.restore();
-        }
-      }else if(recipe===1){
-        // BEND：細長い楕円の膜がしなる。矩形帯ではなく有機的な縦方向の気配。
-        for(let i=0;i<4;i++){
-          const x=(.18+i*.18+Math.sin(t*.15+i+seed*9)*.05)*w;
-          const y=(.52+.08*Math.cos(t*.22+i*1.4))*h;
-          const rx=(.07+.02*Math.sin(i+t*.31))*w;
-          const ry=(.26+.06*Math.cos(i+t*.23))*h;
-          const offX=Math.sin(i*1.4+t*.9+seed*7)*amount*(.42+.12*i);
-          const offY=Math.cos(i*1.2+t*.7+seed*5)*amount*.22;
-          ctx.save();ctx.beginPath();ctx.ellipse(x,y,rx,ry,.18*Math.sin(t*.35+i),0,Math.PI*2);ctx.clip();
-          ctx.globalAlpha=.14+.16*scene;
-          ctx.drawImage(photo,offX,offY,w,h);ctx.restore();
-        }
-      }else if(recipe===2){
-        // RIPPLE：複数のレンズ状の波紋。
-        for(let i=0;i<4;i++){
-          const p=patches[(i+1)%patches.length];
-          const x=(p.x+.02*Math.sin(t*.13+i))*w,y=(p.y+.02*Math.cos(t*.15+i))*h;
-          const r=Math.min(w,h)*(.11+i*.045)*(1+.15*scene+.31*low+.35*jump);
-          ctx.save(); ctx.beginPath();
-          ctx.ellipse(x,y,r,r*(.72+.12*Math.sin(t*.52+i)),.18*Math.sin(t*.4+i),0,Math.PI*2);ctx.clip();
-          ctx.globalAlpha=.20+.18*scene+.10*mid;
-          const sx=Math.sin(t*.54+p.phase)*amount*(.35+i*.12);
-          const sy=Math.cos(t*.58+p.phase)*amount*(.25+i*.10);
-          ctx.drawImage(photo,sx,sy,w,h);
-          ctx.restore();
-        }
-      }else if(recipe===3){
-        // PULSE：音のアタックで丸い気泡が現れて弾む。
-        const step=Math.floor(beat*2+seed*19);
-        for(let i=0;i<4;i++){
-          const gate=((i*7+step*3)%11)<(2+Math.round(scene*4+high*3+jump*3));
-          if(!gate) continue;
-          const p=patches[(i+2)%patches.length];
-          const x=(p.x+.05*Math.sin(step*.4+i))*w;
-          const y=(p.y+.06*Math.cos(step*.5+i))*h;
-          const rx=(p.rx*1.05+.02+jump*.10)*w;
-          const ry=(p.ry*.95+.02+jump*.08)*h;
-          const off=Math.sin(step*.67+i*2.09)*amount*(.42+jump*.35);
-          ctx.save();ctx.beginPath();ctx.ellipse(x,y,rx,ry,.22*Math.sin(step*.3+i),0,Math.PI*2);ctx.clip();
-          ctx.globalAlpha=.18+.22*scene;
-          ctx.drawImage(photo,off,Math.sin(i+t*2)*amount*.08,w,h);ctx.restore();
-        }
-      }else if(recipe===4){
-        // SOLVENT：有機的な輪郭のパッチが漂う。
-        for(let i=0;i<4;i++){
-          const p=patches[i],x=p.x*w,y=p.y*h,rx=p.rx*w*1.30,ry=p.ry*h*1.32;
-          const phase=t*(.32+i*.07)+p.phase;
-          ctx.save();ctx.beginPath();
-          this.pathOrganic(ctx,x,y,rx,ry,phase,.14);ctx.clip();ctx.globalAlpha=.20+.20*scene+.10*low;
-          const offX=Math.cos(phase*.85)*amount*.90;
-          const offY=Math.sin(phase*.6)*amount*.68;
-          ctx.drawImage(photo,offX,offY,w,h);ctx.restore();
-        }
-      }else{
-        // AFTERIMAGE：丸い残像の群れ。
-        for(let i=0;i<3;i++){
-          const p=patches[i+1];
-          const offX=Math.sin(t*(.28+i*.13)+p.phase)*amount*(.50+i*.18);
-          const offY=Math.cos(t*(.31+i*.09)+p.phase)*amount*(.28+i*.16);
-          ctx.globalAlpha=.09+.12*scene+.08*high+.04*jump;
-          ctx.globalCompositeOperation=i%2===0?'screen':'source-over';
-          ctx.save();ctx.beginPath();
-          ctx.ellipse(p.x*w,p.y*h,p.rx*w*1.55,p.ry*h*1.60,.22*Math.sin(t*.4+i),0,Math.PI*2);ctx.clip();
-          ctx.drawImage(photo,offX,offY,w,h);ctx.restore();
-        }
-      }
-      ctx.restore();
+      const phase=((t/Math.max(.001,this.duration))%1+1)%1;
+      this.drawSoftEvolution(ctx,w,h,t,scene,low,mid,high,jump,phase);
     }
     render2D(){
       const ctx=this.ctx;
@@ -364,7 +412,7 @@
       // 再生中はオーディオの時間を基準とし、変化が波形イベントと一致するようにする。
       const t=this.playing?((this.audio.phase||0)*this.duration):this.t;
       const loopPhase=((this.playing?(this.audio.phase||0):(t/this.duration)%1)+1)%1;
-      const mode=this.engine%4,beat=t*this.bpm/60;
+      const mode=this.visualFamily,beat=t*this.bpm/60;
       const env=this.audio.env||0,low=this.audio.low||0,mid=this.audio.mid||0;
       const high=this.audio.high||0,hit=this.audio.hit||0,pulse=this.eventPulse||0;
       const hueDrift=(t*13+high*65+pulse*120+(Number(this.features.hue)||0)*180)%360;
@@ -377,7 +425,7 @@
         loopPhase<.78?(.88+.12*Math.sin((loopPhase-.50)/.28*Math.PI)):
         (.88-.63*(loopPhase-.78)/.22);
       const engineGain=[1,.95,.76,1.08,1.18,1.10,.72,.88,1.12,.8,.85,1.16][this.engine]||1;
-      const amount=[20,32,26,29][mode]*engineGain*([.65,.95,1.26][this.motionProfile]||1)*(.62+scene*.75)*(1+env*.18+jump*.62);
+      const amount=24*engineGain*this.activity*(.55+scene*.8)*(1+env*.18+jump*.62);
 
       // ネイティブ描画を中心に再構成。毎フレーム全画素をJavaScriptで走査しない。
       // iPhone Safariでの描画負荷を大幅に軽減し、音のアタックにも追従しやすくする。
@@ -385,14 +433,32 @@
       ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over'; ctx.filter='none';
       ctx.clearRect(0,0,w,h);
       ctx.drawImage(photo,0,0,w,h);
+      // 強い動作の一部では写真全体も変位させる。
+      // 拡大した全面像を重ねるので、途中に直線的な切断面を作らない。
+      if(this.activity>1 && [1,3,6,7].includes(this.visualFamily)){
+        const strength=(this.activity-1)/1.45;
+        const event=clamp(jump*.6+high*.2,0,1);
+        const sweep=this.visualFamily===3?Math.floor(beat*2)/2:t;
+        const fade=.16+.28*scene+.10*event;
+        const waveX=Math.sin(sweep*(this.visualFamily===7?.83:.31)+this.seed*11);
+        const waveY=Math.cos(sweep*(this.visualFamily===3?.9:.26)+this.seed*7);
+        const zoom=1+.19*strength*(.4+.6*scene)+.045*event;
+        ctx.save();
+        ctx.globalAlpha=clamp(fade*strength,0,.50);
+        ctx.translate(w/2,h/2);
+        ctx.rotate(Math.sin(sweep*.32+this.seed*3)*.035*strength);
+        ctx.scale(zoom,zoom);
+        ctx.drawImage(photo,-w/2+waveX*w*.06*strength,-h/2+waveY*h*.065*strength,w,h);
+        ctx.restore();
+      }
 
       // 動作文法はMUTATEで切り替わる。過剰な重ね描きは避ける。
       this.drawMotion(ctx,photo,w,h,t,beat,amount,patches,low,mid,high,jump,scene);
       // 写真そのものの色調が局所的に分化する。単なる明るい楕円は追加しない。
       this.drawColorEvolution(ctx,w,h,t,scene,env,low,mid,high,jump);
       // オイルレンズの馴染みを残す、共通の柔らかい局所屈折（最大2領域）。
-      if(true){
-        for(let i=0;i<([2,2,3,2,2,3][this.recipe]||2);i++){
+      if(this.visualFamily===0 || this.visualFamily===2 || this.visualFamily===4){
+        for(let i=0;i<(this.visualFamily===2?2:1);i++){
           const p=patches[i],cx=p.x*w,cy=p.y*h,rx=p.rx*w*.88,ry=p.ry*h*.82;
           const rate=this.recipe===3?Math.floor(t*7)/7:t;
           const sx=Math.sin(rate*(.57+i*.19)+p.phase+mid)*amount*.5;
@@ -409,20 +475,20 @@
       // 音のアタックに合わせた、画像の瞬間的な位置ジャンプ。
       // 穏やかなエンジンでは控えめ、RIFT/PULSE/PARTICLEなどは明確に反応。
       const rhythmic=[.38,1,.15,.85,.65,1,.15,.72,1,.55,.66,1][this.engine]||.5;
-      if(jump>.15 && rhythmic>.4){
+      if(jump>.15 && rhythmic>.4 && [1,3,6,7].includes(this.visualFamily)){
         const p=patches[Math.floor(t*this.bpm/60)%patches.length], cx=p.x*w,cy=p.y*h;
         ctx.save();ctx.beginPath();this.pathOrganic(ctx,cx,cy,p.rx*w*1.38,p.ry*h*1.32,t+p.phase,.10);ctx.clip();
         ctx.globalAlpha=Math.min(.42,jump*.44*rhythmic);
         ctx.drawImage(photo,Math.sin(t*3)*amount*.9,Math.cos(t*5)*amount*.65,w,h);ctx.restore();
       }
       // ディレイ感のある写真帯は音のアタックがある時のみ現れる。
-      if(this.recipe===1 || this.recipe===3 || this.recipe===5) this.drawSoundSlices(ctx,w,h,t,high,hit+pulse*.8);
+      if(this.visualFamily===3 || this.visualFamily===7) this.drawSoundSlices(ctx,w,h,t,high,hit+pulse*.8);
 
       // 色の塊ではなく、油膜やレンズ内の薄い干渉膜として処理。
       const palette=this.features.palette||[[.5,.6,.7],[.2,.7,.8],[.8,.3,.5]];
       // 常時3つの色膜を重ねない。動作文法と時間帯によって現れる回数を変える。
-      const lensCount=([2,2,3,2,2,3])[this.recipe];
-      const lensFade=this.recipe===2?(.58+.42*Math.sin(t*.29+this.seed*6)):(.34+.62*scene);
+      const lensCount=([2,0,2,0,1,1,1,0])[this.visualFamily];
+      const lensFade=this.visualFamily===2?(.58+.42*Math.sin(t*.29+this.seed*6)):(.34+.62*scene);
       for(let i=0;i<lensCount;i++){
         const p=patches[i],band=i===0?low:i===1?mid:high;
         const x=(p.x+Math.sin(t*(.16+i*.03)+this.seed+i)*(.03+.03*band)+this.audio.phase*.012*(i+1))*w;
@@ -434,7 +500,7 @@
       }
 
       // 高音には短い色収差と残像。通常時の写真の視認性は保つ。
-      if(high>.10||hit>.08||pulse>.06){
+      if((high>.10||hit>.08||pulse>.06) && [2,3,5,6,7].includes(this.visualFamily)){
         ctx.save();ctx.globalCompositeOperation='screen';
         ctx.globalAlpha=(.020+high*.12+hit*.08+pulse*.11)*(.5+scene*.5);
         const j=1+Math.round(high*6+hit*5+pulse*4);
@@ -443,7 +509,7 @@
         ctx.restore();
       }
       // AFTERIMAGEの時だけ過去のフレームを薄く残す。静止画の単純な二重写しとは異なる。
-      if(this.recipe===5){
+      if(this.visualFamily===5){
         if(this.history){
           ctx.save();ctx.globalCompositeOperation='screen';ctx.globalAlpha=.055+.08*scene+.06*mid;
           ctx.drawImage(this.history,Math.sin(t*.31)*amount*.65,Math.cos(t*.41)*amount*.35,w,h);
