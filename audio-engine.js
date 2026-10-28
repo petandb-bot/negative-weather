@@ -84,48 +84,46 @@
     return { hash,light,saturation,contrast,edge,texture,openness,motion,orientation,spatialContrast,colorDiversity,hue,warm,cool,
       r:red,g:green,b:blue,balance:horizontalBias,verticalBias,highlights:bright/inner,cells:Array.from(cells),edgeCells:Array.from(edgeCells),satCells:Array.from(satCells),hueCells:Array.from(hueCells),palette };
   }
-  // 画像が持つ特徴を8つの「音楽的な習性」の選択確率へ変換する。
-  // 強い相関だけで決め打ちすると写真が変わっても似た結果になるため、
-  // 非ゼロの探索確率と前回のエンジンの回避を組み合わせる。
+  // 写真特徴から12種類の音響エンジンの選択確率を作る。
+  // 全種類の巡回や前回エンジンの強制除外はしない。同じ写真固有の傾向を保持する。
   function engineWeights(f){
     const dark=1-f.light;
+    // 画像解析のエッジ値は小さめの範囲に集中しやすい。
+    // 絶対的な輪郭密度と、方向性の信頼度を補正して使う。
+    const detail=clamp(f.edge*3.5+f.texture*.22,0,1);
+    const tex=clamp(f.texture*1.9,0,1);
+    const open=clamp(1-detail*.85-tex*.16,0,1);
+    const axis=clamp(f.orientation,0,1)*detail;
     const cellContrast=Math.sqrt(f.cells.reduce((v,x)=>v+(x-f.light)**2,0)/16);
     const raw=[
-      .35+1.65*f.openness+.95*f.highlights+.60*(1-f.edge)+.60*f.colorDiversity,       // VEIL
-      .30+2.80*f.edge+1.15*f.orientation+.90*f.contrast,                            // PULSE
-      .35+2.20*dark+1.45*(1-f.edge)+.95*f.spatialContrast,                         // CURRENT
-      .30+2.45*f.texture+1.00*f.colorDiversity+.90*f.saturation,                    // PARTICLE
+      .35+1.65*open+.95*f.highlights+.60*(1-detail)+.60*f.colorDiversity,       // VEIL
+      .30+2.80*detail+1.15*axis+.90*f.contrast,                            // PULSE
+      .35+2.20*dark+1.45*(1-detail)+.95*f.spatialContrast,                         // CURRENT
+      .30+2.45*tex+1.00*f.colorDiversity+.90*f.saturation,                    // PARTICLE
       .30+1.35*f.colorDiversity+1.25*f.highlights+.85*f.balance+.85*f.saturation,   // RELAY
-      .30+1.9*f.orientation+1.45*f.edge+1.15*f.spatialContrast+cellContrast,        // RIFT
-      .30+1.7*dark+1.10*f.texture+1.15*(1-f.saturation)+.6*f.cool,                 // ASH
-      .30+1.4*f.hue+1.35*f.saturation+1.2*f.openness+.80*f.colorDiversity,         // ORBIT
-      .30+2.4*f.texture+1.0*f.edge+1.0*f.spatialContrast+.7*f.colorDiversity, // OBJECT
-      .30+1.8*f.openness+1.1*f.cool+.85*f.highlights+.7*f.colorDiversity,    // DUB TRACE
-      .30+2.1*(1-f.saturation)+1.4*f.texture+1.1*(1-f.light),                // DUST LOOP
-      .30+1.6*f.saturation+1.0*f.light+1.0*f.orientation+.8*f.edge           // TOY HOUSE
+      .30+1.9*axis+1.45*detail+1.15*f.spatialContrast+cellContrast,        // RIFT
+      .30+1.7*dark+1.10*tex+1.15*(1-f.saturation)+.6*f.cool,                 // ASH
+      .30+1.4*f.hue+1.35*f.saturation+1.2*open+.80*f.colorDiversity,         // ORBIT
+      .30+2.4*tex+1.0*detail+1.0*f.spatialContrast+.7*f.colorDiversity, // OBJECT
+      .30+1.8*open+1.1*f.cool+.85*f.highlights+.7*f.colorDiversity,    // DUB TRACE
+      .30+2.1*(1-f.saturation)+1.4*tex+1.1*(1-f.light),                // DUST LOOP
+      .30+1.6*f.saturation+1.0*f.light+1.0*axis+.8*detail           // TOY HOUSE
     ];
-    // 画像からの偏りは維持するが、1系統の独占を防ぐ。
-    const powered=raw.map(v=>Math.pow(Math.max(.1,v),2.2));
-    const avg=powered.reduce((a,b)=>a+b,0)/powered.length;
-    return powered.map(v=>v+avg*.14);
+    // エンジン全種を均等に引くのではなく、写真ごとの偏りを強める。
+    // 別の写真では異なるグループが選ばれ、同じ写真では似た傾向が再び現れてよい。
+    return raw.map(v=>Math.pow(Math.max(.1,v),3.7));
   }
   function chooseEngine(f,mutation=0){
-    const base=engineWeights(f);
-    function sample(m,blocked=-1){
-      const r=new Random((f.hash^Math.imul(m+1,0x9e3779b9)^0x54c3a1b7)>>>0);
-      const w=base.map((x,i)=> i===blocked?0:x);
-      // 同じ写真では少し偏りを維持しつつ、ときどき探索範囲を広げる。
-      if(m>0&&r.chance(.24)) for(let i=0;i<w.length;i++)w[i]=Math.sqrt(w[i]);
-      let t=w.reduce((a,b)=>a+b,0)*r.next();
-      for(let i=0;i<w.length;i++){t-=w[i];if(t<=0)return i;}
-      return w.findIndex(v=>v>0);
-    }
+    const weights=engineWeights(f);
     const m=Math.max(0,Math.floor(mutation));
-    if(m===0)return sample(0);
-    // 再帰の深さを増やさず、HATCH履歴を同じ写真と番号から再現する。
-    let previous=sample(0);
-    for(let i=1;i<m;i++)previous=sample(i,previous);
-    return sample(m,previous);
+    const r=new Random((f.hash^Math.imul(m+1,0x9e3779b9)^0x54c3a1b7)>>>0);
+    const total=weights.reduce((a,b)=>a+b,0);
+    let pos=r.next()*total;
+    for(let i=0;i<weights.length;i++){
+      pos-=weights[i];
+      if(pos<0) return i;
+    }
+    return weights.length-1;
   }
   function imageBpm(f,engine,seed){
     const ranges=[[54,86],[88,136],[40,72],[76,128],[64,108],[94,148],[45,82],[80,134],[72,122],[76,124],[58,106],[104,138]][engine];

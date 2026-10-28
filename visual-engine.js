@@ -1,6 +1,57 @@
 (function(root){
   'use strict';
   const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+  const unit=x=>clamp(Number.isFinite(+x)?+x:0,0,1);
+  function random01(seed){
+    let x=(seed>>>0)||0x62f5a31b;
+    x^=x<<13; x^=x>>>17; x^=x<<5;
+    return (x>>>0)/4294967296;
+  }
+  function weightedPick(weights,seed){
+    const sum=weights.reduce((a,b)=>a+Math.max(0,b),0);
+    if(!(sum>0))return 0;
+    let x=random01(seed)*sum;
+    for(let i=0;i<weights.length;i++){
+      x-=Math.max(0,weights[i]);
+      if(x<0)return i;
+    }
+    return weights.length-1;
+  }
+  // 写真の特徴は一度抽出し、MUTATEでは乱数だけを変える。
+  // 8モードを必ず巡回させる仕組みは採用せず、写真ごとの偏りを維持する。
+  function visualWeights(f){
+    const light=unit(f.light),dark=1-light,edge=unit(f.edge);
+    // エッジ解析値は実写では小さく出やすい。単純な開放度を使うと
+    // どの写真も LENS FLOAT に偏るため、視覚用に正規化した細部量を使う。
+    const tex=unit(f.texture*1.9),detail=unit(f.edge*3.5+f.texture*.22);
+    const open=unit(1-detail*.85-tex*.16),contr=unit(f.contrast*2.8);
+    const spatial=unit(f.spatialContrast*2.2),sat=unit(f.saturation);
+    const hueMix=unit(f.colorDiversity),hi=unit(f.highlights*3.0);
+    const axis=unit(f.orientation)*detail,balance=unit(Math.abs(f.balance));
+    const raw=[
+      .12+2.8*open+1.5*(1-detail)+.9*hi+.6*light,                    // LENS FLOAT
+      .12+3.0*spatial+1.5*balance+1.1*tex+.4*detail,               // TIDAL SHEAR
+      .12+2.5*hi+1.4*contr+1.3*open+.8*hueMix,                  // IRIS
+      .12+3.0*detail+2.0*axis+1.5*tex+.5*contr,                  // GLITCH BLOOM
+      .12+2.5*sat+1.8*hueMix+1.0*tex+.7*unit(f.warm),           // SOLVENT
+      .12+2.7*dark+1.4*(1-sat)+1.1*spatial+.6*open,         // GHOST FIELD
+      .12+2.6*hueMix+2.1*sat+1.0*light+.5*unit(f.cool),         // CHROMA MORPH
+      .12+2.4*contr+1.7*detail+1.7*tex+.7*dark                    // COLLAPSE/RETURN
+    ];
+    return raw.map(v=>Math.pow(v,3.8));
+  }
+  function colorWeights(f){
+    const sat=unit(f.saturation),light=unit(f.light),div=unit(f.colorDiversity);
+    const cool=unit(f.cool*3),warm=unit(f.warm*3),edge=unit(f.edge);
+    return [
+      .25+1.6*light+1.6*unit(f.openness), // fade
+      .25+2.1*sat+1.5*unit(f.texture),   // melt
+      .25+2.0*div+1.3*edge,             // split
+      .25+2.3*light+1.5*(1-sat),        // bleach
+      .25+2.1*cool+1.0*(1-light),       // phosphor
+      .25+2.1*warm+1.1*sat             // heat shift
+    ].map(v=>v*v*v);
+  }
   class PhotoRenderer {
     constructor(canvas){
       this.canvas=canvas;
@@ -14,6 +65,7 @@
       this.duration=20; this.history=null; this.historyAt=-100; this.sceneIndex=0;
       this.colorProfile=0; this.motionProfile=0; this.colorLayers=[]; this.motionLayers=[]; this.cachedPatches=null;
       this.activity=1; this.visualFamily=0; this.motionMutation=0; this.renderErrors=0;
+      this.signalDirection=0; this.signalDensity=0; this.baseBreath=0;
       this.resize(); window.addEventListener('resize',()=>this.resize(),{passive:true});
       requestAnimationFrame(t=>this.frame(t));
     }
@@ -42,20 +94,38 @@
     setMood(index,seed,features={},bpm=100,mutation=0,duration=20){
       this.engine=index; this.seed=(seed%100000)/100000; this.duration=duration;
       this.features={hue:0,saturation:0,warm:0,cool:0,...features};
-      // 写真の固有値から開始位置を決め、MUTATEでは必ず次の動作文法に進む。
-      // 最初の6回は重複しないが、音響エンジン選択には影響させない。
-      // 音響エンジンとは独立した8種類の映像文法。
-      // 初回は写真の特徴、以後8回のMUTATEで全種類を一巡する。
+      // 写真ごとに強い選択傾向を持たせる。全8種を試せることは保証しない。
+      // 同じ写真のMUTATEでは、同じ系統の深掘りや再出現も許容する。
       const hash=features.hash>>>0;
-      this.visualFamily=(hash%8 + mutation%8)%8;
-      this.recipe=this.visualFamily;
-      this.colorProfile=((((hash>>>7)%6)+mutation)%6);
-      // 静・中・動の区別を拡大。ビート系は動きが強くなるが、MUTATEで静的な結果も生じる。
+      const base=visualWeights(this.features);
+      const weighted=base.slice();
       const rhythmic=[0,1,0,1,0,1,0,1,1,0,1,1][index]||0;
-      const base=(Math.floor(hash/17)+mutation*2+rhythmic)%3;
-      this.motionProfile=base;
-      this.activity=[.40,1.05,2.45][base];
+      // 音響との相性は補助的な影響だけにする（写真の個性を上書きしない）。
+      const align=rhythmic?[1,3,7]:[0,2,4,5];
+      for(const i of align) weighted[i]*=1.12;
+      this.visualFamily=weightedPick(weighted,(hash ^ Math.imul(mutation+1,0x9e3779b9) ^ 0x83c62129)>>>0);
+      this.recipe=this.visualFamily;
+      this.colorProfile=weightedPick(colorWeights(this.features),(hash ^ Math.imul(mutation+1,0x85ebca6b) ^ 0x318cf264)>>>0);
+
+      // 静・中・動も写真に依存。輪郭の少ない写真は静的な映像が出やすい。
+      const drive=clamp(.12 + unit(features.edge)*.32 + unit(features.texture)*.26
+        + unit(features.contrast*2.8)*.18 + rhythmic*.06,0,1);
+      const quiet=Math.max(.08,1.25-drive*1.55), medium=.62+drive*.22;
+      const active=.10+drive*1.30;
+      this.motionProfile=weightedPick([quiet,medium,active],(hash ^ Math.imul(mutation+1,0xc2b2ae35) ^ 0x124fa3d1)>>>0);
+      this.activity=[.40,1.05,2.45][this.motionProfile];
       this.motionMutation=mutation;
+
+      // 縦/横ピクセルずれも、エッジや輪郭の向きと音の性格から出現確率を決める。
+      const digital=clamp(unit(features.edge)*.58 + unit(features.orientation)*.28
+        + rhythmic*.17,0,1);
+      const onProb=clamp(.08+digital*.83,.08,.91);
+      const signalSeed=(hash ^ Math.imul(mutation+1,0x27d4eb2f) ^ 0xb3ab27a9)>>>0;
+      const enabled=random01(signalSeed)<onProb;
+      const preferVertical=unit(features.orientation)*.45 + unit(features.balance*features.balance)*.3;
+      this.signalDirection=enabled ? (random01(signalSeed^0x7f4a7c15)<.42+preferVertical*.25?2:1) : 0;
+      this.signalDensity=.55 + ((hash>>>18)%5)*.12;
+      this.baseBreath=(.70 + (hash%7)*.08) * [0.62,1.00,1.48][this.motionProfile];
       this.bpm=bpm; this.t=0; this.eventPulse=0; this.prevHit=0;
       this.history=null;this.historyAt=-100;this.sceneIndex=0;
       this.cachedPatches=this.makePatches(); this.prepareColorLayers(); this.prepareMotionLayers();
@@ -296,6 +366,83 @@
         ctx.restore();
       }
     }
+    drawBreathingBase(ctx,photo,w,h,t,loopPhase,scene,low,mid,high,hit){
+      // ベース写真全体の呼吸。領域を切り出さず、全面を一枚として変形する。
+      // 拡大中心で描画し、黒い縁が出ないよう最小倍率を1以上に保つ。
+      const act=this.baseBreath;
+      const pace=this.visualFamily===3?0.7:this.visualFamily===7?.42:.22;
+      const swing=Math.sin(t*pace+this.seed*9);
+      const breath=(.5+.5*swing);
+      const swell=Math.pow(Math.sin(Math.PI*loopPhase),2);
+      const sound=clamp(low*.26+mid*.12+hit*.18+this.eventPulse*.15,0,.65);
+      const zoom=1+act*(.013+.024*breath+.012*swell+.012*sound);
+      const angle=act*.005*Math.sin(t*.20+this.seed*5);
+      const shear=act*.009*Math.sin(t*.26+this.seed*3.2+mid*.6);
+      const x=w*.5, y=h*.5;
+      ctx.save();
+      ctx.translate(x,y);
+      ctx.transform(1,shear*.23,shear,1,0,0);
+      ctx.rotate(angle);
+      ctx.scale(zoom,zoom);
+      ctx.drawImage(photo,-x,-y,w,h);
+      ctx.restore();
+    }
+    drawSignalDrift(ctx,photo,w,h,t,beat,high,hit,jump,scene){
+      // raster 的な縦横の画素移動。照明や矩形の色面は描画しない。
+      // 切り口のある画像信号そのものの位相ずれとして扱う。
+      const family=this.visualFamily;
+      const digital=[.12,.70,.10,1.0,.10,.18,.63,.95][family];
+      if(digital<=.18 && this.signalDirection===0)return;
+      const mode=this.signalDirection || (family===3?1:family===7?2:0);
+      if(!mode)return;
+      const active=Math.max(.12,digital)*(.20 + scene*.42 + high*.20 + hit*.35 + jump*.28);
+      const count=Math.round((2+this.signalDensity*4)*(family===3||family===7?1.3:1));
+      const phase=Math.floor(beat*4); // 発音に近い時間格子で更新
+      const quant=t*.7 + phase*.28;
+      ctx.save();
+      ctx.globalCompositeOperation='source-over';
+      // 切断面は細い画素の移動だけ。中央の太い長方形や光線は描かない。
+      for(let i=0;i<count;i++){
+        const seed=this.seed*19+i*2.31;
+        const gate=Math.sin(quant*.63+i*1.93+seed);
+        if(gate < -.28)continue;
+        const visible=(.12+.55*Math.abs(gate))*active;
+        const step=Math.round((Math.sin(quant*1.9+seed*2.4)+Math.sin(quant*.56+seed))*22*visible);
+        if(Math.abs(step)<1)continue;
+        if(mode===1){
+          const yy=Math.round((.05+.9*(i+.3)/count + .025*Math.sin(t*.34+seed))*h);
+          const thick=Math.max(2,Math.round((2+this.signalDensity*8)*(1+.8*(i%3===0))));
+          const sy=clamp(yy,0,h-thick);
+          ctx.globalAlpha=clamp(.36+active*.58,0,.92);
+          // source clipping avoids black borders; the original image remains beneath.
+          ctx.drawImage(photo,0,sy,w,thick,step,sy,w,thick);
+        } else {
+          const xx=Math.round((.05+.9*(i+.3)/count + .025*Math.sin(t*.28+seed))*w);
+          const thick=Math.max(2,Math.round((2+this.signalDensity*7)*(1+.6*(i%3===0))));
+          const sx=clamp(xx,0,w-thick);
+          ctx.globalAlpha=clamp(.34+active*.52,0,.90);
+          ctx.drawImage(photo,sx,0,thick,h,sx,step,thick,h);
+        }
+      }
+      ctx.restore();
+    }
+    drawLensRefraction(ctx,w,h,t,low,mid,high,jump,scene){
+      // あらかじめフェザーを付けた写真片を、移動・拡大・屈折させる。
+      // 四角いクリップではなく、楕円のソフトマスクを利用する。
+      const family=this.visualFamily;
+      const amount=[2,1,3,1,2,2,1,1][family];
+      const minDim=Math.min(w,h);
+      for(let i=0;i<amount;i++){
+        const layer=this.motionLayers[(i+family)%this.motionLayers.length];
+        if(!layer)continue;
+        const a=t*(.29+i*.09)+layer.patch.phase+this.seed*6;
+        const driftX=Math.sin(a)*minDim*(.065+.015*i)*this.activity;
+        const driftY=Math.cos(a*.74)*minDim*(.038+.015*i)*this.activity;
+        const depth=1+(.05+.08*Math.sin(a*.48))*(.75+.25*this.activity) + low*.035 + jump*.06;
+        const alpha=clamp((.22+.17*scene+.14*low+.10*mid)*(family===0||family===2?1.22:.92),0,.67);
+        this.drawSoftLayer(ctx,layer,driftX,driftY,depth,Math.sin(a*.32)*.045,alpha);
+      }
+    }
     drawLensBlob(ctx,x,y,rx,ry,hue,strength=1,tilt=0){
       ctx.save();
       ctx.translate(x,y); ctx.rotate(tilt); ctx.scale(1,ry/rx);
@@ -398,7 +545,7 @@
         this.frameCost=this.frameCost?this.frameCost*.88+cost*.12:cost;
       }
     }
-    // 写真のカラーと輪郭を守ったまま、動作そのものを6つに分ける。
+    // 8種類の動作文法に共通の呼吸・屈折・信号ずれを選択的に重ねる。
     // どの文法も少数のdrawImageだけを使い、全画素のJavaScript処理は行わない。
     drawMotion(ctx,photo,w,h,t,beat,amount,patches,low,mid,high,jump,scene){
       const phase=((t/Math.max(.001,this.duration))%1+1)%1;
@@ -432,7 +579,7 @@
       ctx.save();
       ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over'; ctx.filter='none';
       ctx.clearRect(0,0,w,h);
-      ctx.drawImage(photo,0,0,w,h);
+      this.drawBreathingBase(ctx,photo,w,h,t,loopPhase,scene,low,mid,high,hit);
       // 強い動作の一部では写真全体も変位させる。
       // 拡大した全面像を重ねるので、途中に直線的な切断面を作らない。
       if(this.activity>1 && [1,3,6,7].includes(this.visualFamily)){
@@ -454,6 +601,8 @@
 
       // 動作文法はMUTATEで切り替わる。過剰な重ね描きは避ける。
       this.drawMotion(ctx,photo,w,h,t,beat,amount,patches,low,mid,high,jump,scene);
+      // 深さの違う楕円状の局所屈折を復活させる。
+      this.drawLensRefraction(ctx,w,h,t,low,mid,high,jump,scene);
       // 写真そのものの色調が局所的に分化する。単なる明るい楕円は追加しない。
       this.drawColorEvolution(ctx,w,h,t,scene,env,low,mid,high,jump);
       // オイルレンズの馴染みを残す、共通の柔らかい局所屈折（最大2領域）。
@@ -483,11 +632,13 @@
       }
       // ディレイ感のある写真帯は音のアタックがある時のみ現れる。
       if(this.visualFamily===3 || this.visualFamily===7) this.drawSoundSlices(ctx,w,h,t,high,hit+pulse*.8);
+      // 細い縦横のピクセルずれは、写真本来の画素だけで作る。
+      this.drawSignalDrift(ctx,photo,w,h,t,beat,high,hit,jump,scene);
 
       // 色の塊ではなく、油膜やレンズ内の薄い干渉膜として処理。
       const palette=this.features.palette||[[.5,.6,.7],[.2,.7,.8],[.8,.3,.5]];
       // 常時3つの色膜を重ねない。動作文法と時間帯によって現れる回数を変える。
-      const lensCount=([2,0,2,0,1,1,1,0])[this.visualFamily];
+      const lensCount=([2,1,3,1,2,2,1,1])[this.visualFamily];
       const lensFade=this.visualFamily===2?(.58+.42*Math.sin(t*.29+this.seed*6)):(.34+.62*scene);
       for(let i=0;i<lensCount;i++){
         const p=patches[i],band=i===0?low:i===1?mid:high;
@@ -525,5 +676,7 @@
     }
     async pngBlob(){ return new Promise((resolve,reject)=>this.canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('PNG export failed')),'image/png')); }
   }
+  // Expose pure selection helpers for reproducibility / photo-bias tests.
   root.NWVisual = PhotoRenderer;
+  root.NWVisualSelection={visualWeights,colorWeights,weightedPick};
 })(window);
