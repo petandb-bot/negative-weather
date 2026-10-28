@@ -1,14 +1,27 @@
 {
-  "name": "NEGATIVE WEATHER",
-  "short_name": "NEG WEATHER",
-  "description": "A photograph becomes a temporary sound world.",
-  "start_url": "./",
-  "scope": "./",
+  "name": "Incident Archive",
+  "short_name": "Incident",
   "display": "standalone",
-  "background_color": "#111514",
-  "theme_color": "#111514",
+  "background_color": "#c1c8dd",
+  "theme_color": "#c1c8dd",
+  "start_url": "./index.html",
+  "scope": "./",
   "icons": [
-    {"src":"./assets/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
-    {"src":"./assets/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
-  ]
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "./icons/icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ],
+  "description": "Incident Archive v0.2.9.8 — strong multi-color dye flooding with optical bloom."
 }
