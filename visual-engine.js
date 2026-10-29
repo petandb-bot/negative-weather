@@ -368,12 +368,87 @@
         const x=Math.sin(t*(.17+i*.12)+layer.patch.phase)*(12+mid*22+jump*12)*act;
         const y=Math.cos(t*(.13+i*.08)+layer.patch.phase)*(10+low*18)*act;
         const zoom=1+((p===1?.08:p===3?.05:.045)*act)*Math.sin(t*.3+i*1.7)+jump*.035*act;
-        ctx.save();ctx.globalAlpha=clamp(alpha,0,.64);
+        ctx.save();ctx.globalAlpha=clamp(alpha,0,.78);
         ctx.translate(w/2+x,h/2+y);ctx.scale(zoom,zoom);ctx.translate(-w/2,-h/2);
         ctx.drawImage(layer.canvas,0,0,w,h);
         ctx.restore();
       }
     }
+
+    drawLeakFlash(ctx,w,h,t,scene,turn,low,mid,high,jump){
+      // 以前の light leak は局所的すぎて、実機ではほとんど見えないことがあった。
+      // ここではフレーム外から侵入する大きな発光膜と、瞬きのような短い全体フラッシュを足す。
+      const palette=this.features.palette||[[.5,.6,.7],[.2,.7,.8],[.8,.3,.5]];
+      const warm=unit(this.features.warm*2.2), cool=unit(this.features.cool*2.2);
+      const blink=Math.pow(Math.max(0,Math.sin(t*(.95+high*.12)+this.seed*9.7)),12);
+      const shimmer=.5+.5*Math.sin(t*.18+this.seed*4.1);
+      const surge=clamp(turn*1.2 + jump*.9 + high*.18 + blink*.75,0,1.35);
+      const base=.05 + scene*.10 + shimmer*.05;
+      const strength=clamp(base+surge,0,1.45);
+      if(strength<.08) return;
+
+      const minDim=Math.min(w,h);
+      const hueWarm=(28 + warm*36 + t*1.2)%360;
+      const hueCool=(195 + cool*42 + t*1.0)%360;
+      const edgeAlpha=clamp(.08 + strength*.16,0,.34);
+
+      ctx.save();
+      ctx.globalCompositeOperation='screen';
+
+      // フレーム端から入る大きな漏光。硬い直線ではなく、ぼんやりした膜として描く。
+      const side=(this.visualFamily + this.motionMutation)%4;
+      const leaks= side===0 ? [
+        {x:-w*.10,y:h*(.18+.18*Math.sin(t*.11)),rx:minDim*.62,ry:minDim*.36,h:hueWarm,a:edgeAlpha*.95,tilt:-.22},
+        {x:w*1.03,y:h*(.74+.10*Math.cos(t*.09)),rx:minDim*.42,ry:minDim*.26,h:hueCool,a:edgeAlpha*.55,tilt:.26}
+      ] : side===1 ? [
+        {x:w*(.22+.14*Math.sin(t*.13)),y:-h*.08,rx:minDim*.58,ry:minDim*.34,h:hueWarm+18,a:edgeAlpha*.92,tilt:.46},
+        {x:w*(.78+.08*Math.cos(t*.11)),y:h*1.05,rx:minDim*.38,ry:minDim*.26,h:hueCool,a:edgeAlpha*.48,tilt:-.22}
+      ] : side===2 ? [
+        {x:w*1.07,y:h*(.24+.15*Math.sin(t*.10)),rx:minDim*.66,ry:minDim*.38,h:hueWarm+6,a:edgeAlpha*.98,tilt:.18},
+        {x:-w*.05,y:h*(.80+.08*Math.cos(t*.12)),rx:minDim*.34,ry:minDim*.22,h:hueCool-12,a:edgeAlpha*.46,tilt:-.34}
+      ] : [
+        {x:w*(.18+.12*Math.sin(t*.08)),y:h*1.08,rx:minDim*.60,ry:minDim*.35,h:hueWarm-8,a:edgeAlpha*.90,tilt:-.54},
+        {x:w*(.84+.08*Math.cos(t*.14)),y:-h*.05,rx:minDim*.36,ry:minDim*.24,h:hueCool+22,a:edgeAlpha*.50,tilt:.18}
+      ];
+      for(const leak of leaks){
+        this.drawLensBlob(ctx,leak.x,leak.y,leak.rx,leak.ry,leak.h,leak.a*6.2,leak.tilt);
+      }
+
+      // 写真に薄く溶けるような有機的なフィルム片。
+      const patches=this.cachedPatches||[];
+      for(let i=0;i<Math.min(2,patches.length);i++){
+        const p=patches[(i+this.motionMutation)%patches.length];
+        const x=p.x*w + Math.sin(t*(.22+i*.05)+p.phase)*minDim*.05;
+        const y=p.y*h + Math.cos(t*(.18+i*.04)+p.phase)*minDim*.04;
+        const rx=minDim*(.14+.06*i+scene*.03);
+        const ry=rx*(.55+.18*Math.sin(t*.6+i));
+        ctx.save();
+        ctx.beginPath();
+        this.pathOrganic(ctx,x,y,rx,ry,t*.32+p.phase,.13);
+        ctx.clip();
+        const g=ctx.createRadialGradient(x-rx*.15,y-ry*.1,0,x,y,rx*1.1);
+        g.addColorStop(0,`hsla(${(hueWarm+i*46)%360}, 95%, 76%, ${.11*strength})`);
+        g.addColorStop(.42,`hsla(${(hueCool+i*20)%360}, 80%, 66%, ${.05*strength})`);
+        g.addColorStop(1,'rgba(0,0,0,0)');
+        ctx.fillStyle=g;
+        ctx.fillRect(x-rx*1.2,y-ry*1.2,rx*2.4,ry*2.4);
+        ctx.restore();
+      }
+
+      // 瞬きのような短い全体フラッシュ。常時ではなく、転調やアタックで強くなる。
+      const flash=clamp(blink*.55 + turn*.70 + jump*.42,0,1.2);
+      if(flash>.03){
+        ctx.globalCompositeOperation='screen';
+        const wash=ctx.createLinearGradient(0,0,0,h);
+        wash.addColorStop(0,`rgba(255,248,238,${.02 + flash*.09})`);
+        wash.addColorStop(.55,`rgba(255,244,236,${.015 + flash*.05})`);
+        wash.addColorStop(1,`rgba(255,250,246,${.01 + flash*.03})`);
+        ctx.fillStyle=wash;
+        ctx.fillRect(0,0,w,h);
+      }
+      ctx.restore();
+    }
+
     drawBreathingBase(ctx,photo,w,h,t,loopPhase,scene,low,mid,high,hit){
       // ベース写真全体の呼吸。領域を切り出さず、全面を一枚として変形する。
       // 拡大中心で描画し、黒い縁が出ないよう最小倍率を1以上に保つ。
@@ -621,6 +696,7 @@
       this.drawLensRefraction(ctx,w,h,t,low,mid,high,jump,scene);
       // 写真そのものの色調が局所的に分化する。単なる明るい楕円は追加しない。
       this.drawColorEvolution(ctx,w,h,t,scene,env,low,mid,high,jump+turn*.12);
+      this.drawLeakFlash(ctx,w,h,t,scene,turn,low,mid,high,jump);
       // オイルレンズの馴染みを残す、共通の柔らかい局所屈折（最大2領域）。
       if(this.visualFamily===0 || this.visualFamily===2 || this.visualFamily===4){
         for(let i=0;i<(this.visualFamily===2?2:1);i++){

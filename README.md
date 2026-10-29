@@ -1,4 +1,4 @@
-# NEGATIVE WEATHER v0.5.4 — Photo Score
+# NEGATIVE WEATHER v0.5.5 — Light Leak Pulse
 
 A photograph becomes its own sound and moving image.
 
@@ -8,7 +8,7 @@ A photograph becomes its own sound and moving image.
 3. **MUTATE** to explore another version of the same photo.
 4. **SAVE** to export a WAV loop or a PNG frame.
 
-## New in v0.5.4
+## New in v0.5.5
 - Photo-driven musical structure: notes, rests, density, bar dynamics and harmonic-change speed.
 - A shared musical timeline guides color drift, oval lens motion and photographic transformations.
 - The photo still biases the engine selection. MUTATE does not cycle through all engines.
