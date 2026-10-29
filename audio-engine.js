@@ -286,17 +286,17 @@
     }
     getLofiAmount(){
       const f=this.f;
-      if(this.engine===0 && this.variant===2) return clamp(.24 + f.texture*.22 + (1-f.light)*.08,0,.52);
-      if(this.engine===1 && this.variant===2) return clamp(.14 + f.edge*.12 + f.texture*.10,0,.34);
-      if(this.engine===2 && this.variant===0) return clamp(.08 + (1-f.light)*.10,0,.22);
-      if(this.engine===3 && this.variant===1) return clamp(.18 + f.texture*.20 + f.colorDiversity*.10,0,.45);
-      if(this.engine===4 && this.variant===2) return clamp(.19+f.texture*.18,0,.41);
-      if(this.engine===6) return clamp(.27+f.texture*.18+(1-f.light)*.08,0,.53);
-      if(this.engine===5 && this.variant===2) return .15;
-      if(this.engine===8) return .05+f.texture*.08;
-      if(this.engine===10) return .30+f.texture*.19+(1-f.saturation)*.08;
-      if(this.engine===9 && this.variant===2) return .12;
-      return clamp(.02 + f.texture*.03,0,.08);
+      if(this.engine===0 && this.variant===2) return clamp(.18 + f.texture*.15 + (1-f.light)*.05,0,.36);
+      if(this.engine===1 && this.variant===2) return clamp(.10 + f.edge*.08 + f.texture*.06,0,.24);
+      if(this.engine===2 && this.variant===0) return clamp(.05 + (1-f.light)*.06,0,.15);
+      if(this.engine===3 && this.variant===1) return clamp(.13 + f.texture*.14 + f.colorDiversity*.06,0,.32);
+      if(this.engine===4 && this.variant===2) return clamp(.13+f.texture*.12,0,.28);
+      if(this.engine===6) return clamp(.18+f.texture*.12+(1-f.light)*.05,0,.36);
+      if(this.engine===5 && this.variant===2) return .10;
+      if(this.engine===8) return .03+f.texture*.05;
+      if(this.engine===10) return .20+f.texture*.12+(1-f.saturation)*.05;
+      if(this.engine===9 && this.variant===2) return .08;
+      return clamp(.01 + f.texture*.02,0,.05);
     }
     // 同じ小節位置では同じ休符傾向を持つ。主題と空白を共存させる。
     activityAt(at){
@@ -327,14 +327,14 @@
     addEvent(time,low=0,mid=0,high=0,accent=0){ this.events.push({time,low,mid,high,accent}); }
     addDust(at,dur,amp,pan=0){
       const level=this.eventLevel(at,'dust',dur);if(!level)return;
-      amp*=level;
+      amp*=level*.68;
       const a=Math.max(0,Math.floor(at*SR)), b=Math.min(this.n,Math.ceil((at+dur)*SR));
       const l=Math.sqrt((1-pan)/2), r=Math.sqrt((1+pan)/2); let band=0;
       this.addEvent(at,amp*.15,amp*.55,amp*.8,amp*.45);
       for(let i=a;i<b;i++){
         const t=(i-a)/SR, rem=(b-i)/SR, env=clamp(Math.min(t/.02,rem/.08,1),0,1);
         const white=this.rng.range(-1,1); band=band*.72+white*.28;
-        const hiss=(white*.42 + band*.58)*amp*env;
+        const hiss=(white*.28 + band*.42)*amp*env;
         this.left[i]+=hiss*l; this.right[i]+=hiss*r;
       }
     }
@@ -393,7 +393,7 @@
     }
     addNoise(at,dur,amp,kind='air',pan=0){
       const level=this.eventLevel(at,kind,dur);if(!level)return;
-      amp*=level;
+      amp*=level*.68;
       const a=Math.max(0,Math.floor(at*SR)), b=Math.min(this.n,Math.ceil((at+dur)*SR));
       const l=Math.sqrt((1-pan)/2), r=Math.sqrt((1+pan)/2); let low=0, low2=0;
       this.addEvent(at, kind==='thump'?amp*2:amp*.3, amp*1.1, kind==='air'?amp*.8:amp*1.4, amp*.8);
@@ -687,7 +687,7 @@
     applyLofi(){
       const l=this.lofiAmount||0; if(l<=0) return;
       const L=this.left, R=this.right, n=this.n, rng=new Random((this.seed^0x5a17e3b1)>>>0);
-      const hold=1+Math.floor(2+l*7), mixAmt=.08 + l*.16, hiss=.0008 + l*.0035, blur=.04 + l*.12;
+      const hold=1+Math.floor(2+l*7), mixAmt=.05 + l*.10, hiss=.00035 + l*.0018, blur=.03 + l*.09;
       let holdL=0, holdR=0, prevL=0, prevR=0;
       for(let i=0;i<n;i++){
         if(i%hold===0){ holdL=L[i]; holdR=R[i]; }

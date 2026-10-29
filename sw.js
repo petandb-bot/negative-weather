@@ -1,6 +1,6 @@
 /* バージョン付きシェルキャッシュ。更新が即座に伝わるよう古い世代を削除する。 */
-const CACHE='negative-weather-shell-0.5.5';
-const ASSETS=['./','./index.html','./style.css?v=0.5.5','./app.js?v=0.5.5','./audio-engine.js?v=0.5.5','./visual-engine.js?v=0.5.5','./manifest.webmanifest','./assets/icon-192.png','./assets/icon-512.png'];
+const CACHE='negative-weather-shell-0.5.6-logo1';
+const ASSETS=['./','./index.html','./style.css?v=0.5.6-logo1','./app.js?v=0.5.6','./audio-engine.js?v=0.5.6','./visual-engine.js?v=0.5.6','./manifest.webmanifest','./assets/icon-192.png','./assets/icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(Promise.all([
   caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('negative-weather-')&&k!==CACHE).map(k=>caches.delete(k)))),

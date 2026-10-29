@@ -66,7 +66,7 @@
       this.composition=null;
       this.colorProfile=0; this.motionProfile=0; this.colorLayers=[]; this.motionLayers=[]; this.cachedPatches=null;
       this.activity=1; this.visualFamily=0; this.motionMutation=0; this.renderErrors=0;
-      this.signalDirection=0; this.signalDensity=0; this.baseBreath=0;
+      this.signalDirection=0; this.signalDensity=0; this.baseBreath=0; this.signalCadence=.18; this.signalThreshold=.42;
       this.resize(); window.addEventListener('resize',()=>this.resize(),{passive:true});
       requestAnimationFrame(t=>this.frame(t));
     }
@@ -123,12 +123,14 @@
       // 縦/横ピクセルずれも、エッジや輪郭の向きと音の性格から出現確率を決める。
       const digital=clamp(unit(features.edge)*.58 + unit(features.orientation)*.28
         + rhythmic*.17,0,1);
-      const onProb=clamp(.08+digital*.83,.08,.91);
+      const onProb=clamp(.04+digital*.42,.04,.56);
       const signalSeed=(hash ^ Math.imul(mutation+1,0x27d4eb2f) ^ 0xb3ab27a9)>>>0;
       const enabled=random01(signalSeed)<onProb;
-      const preferVertical=unit(features.orientation)*.45 + unit(features.balance*features.balance)*.3;
-      this.signalDirection=enabled ? (random01(signalSeed^0x7f4a7c15)<.42+preferVertical*.25?2:1) : 0;
-      this.signalDensity=.55 + ((hash>>>18)%5)*.12;
+      const preferVertical=unit(features.orientation)*.28 + unit(features.balance*features.balance)*.12;
+      this.signalDirection=enabled ? (random01(signalSeed^0x7f4a7c15)<.48+preferVertical*.12?2:1) : 0;
+      this.signalDensity=.36 + ((hash>>>18)%5)*.09;
+      this.signalCadence=.11 + random01(signalSeed^0x5bd1e995)*.19;
+      this.signalThreshold=.38 + random01(signalSeed^0x85ebca77)*.18;
       this.baseBreath=(.70 + (hash%7)*.08) * [0.62,1.00,1.48][this.motionProfile];
       this.bpm=bpm; this.t=0; this.eventPulse=0; this.prevHit=0;
       this.history=null;this.historyAt=-100;this.sceneIndex=0;
@@ -471,39 +473,41 @@
       ctx.restore();
     }
     drawSignalDrift(ctx,photo,w,h,t,beat,high,hit,jump,scene){
-      // raster 的な縦横の画素移動。照明や矩形の色面は描画しない。
-      // 切り口のある画像信号そのものの位相ずれとして扱う。
+      // raster 的な縦横の画素移動。これは常時ではなく、
+      // たまに信号が滑るようなイベントとして現れる方が自然。
       const family=this.visualFamily;
       const digital=[.12,.70,.10,1.0,.10,.18,.63,.95][family];
       if(digital<=.18 && this.signalDirection===0)return;
       const mode=this.signalDirection || (family===3?1:family===7?2:0);
       if(!mode)return;
-      const active=Math.max(.12,digital)*(.20 + scene*.42 + high*.20 + hit*.35 + jump*.28);
-      const count=Math.round((2+this.signalDensity*4)*(family===3||family===7?1.3:1));
-      const phase=Math.floor(beat*4); // 発音に近い時間格子で更新
+      const phase=Math.floor(beat*4);
       const quant=t*.7 + phase*.28;
+      const slow=Math.max(0,Math.sin(t*(this.signalCadence||.16)+this.seed*14.7));
+      const burst=Math.max(0,Math.sin(quant*.41+this.seed*9.2));
+      const trigger=Math.max(slow*.85, burst*.6 + high*.12 + hit*.75 + jump*.90);
+      if(trigger < (this.signalThreshold||.42)) return;
+      const active=Math.max(.08,digital)*(.08 + scene*.20 + high*.12 + hit*.28 + jump*.24 + trigger*.55);
+      const count=Math.max(1,Math.round((1+this.signalDensity*3)*(family===3||family===7?1.15:1)));
       ctx.save();
       ctx.globalCompositeOperation='source-over';
-      // 切断面は細い画素の移動だけ。中央の太い長方形や光線は描かない。
       for(let i=0;i<count;i++){
         const seed=this.seed*19+i*2.31;
         const gate=Math.sin(quant*.63+i*1.93+seed);
-        if(gate < -.28)continue;
-        const visible=(.12+.55*Math.abs(gate))*active;
-        const step=Math.round((Math.sin(quant*1.9+seed*2.4)+Math.sin(quant*.56+seed))*22*visible);
+        if(gate < -.08)continue;
+        const visible=(.08+.42*Math.abs(gate))*active;
+        const step=Math.round((Math.sin(quant*1.9+seed*2.4)+Math.sin(quant*.56+seed))*12*visible);
         if(Math.abs(step)<1)continue;
         if(mode===1){
-          const yy=Math.round((.05+.9*(i+.3)/count + .025*Math.sin(t*.34+seed))*h);
-          const thick=Math.max(2,Math.round((2+this.signalDensity*8)*(1+.8*(i%3===0))));
+          const yy=Math.round((.08+.84*(i+.3)/count + .018*Math.sin(t*.34+seed))*h);
+          const thick=Math.max(2,Math.round((2+this.signalDensity*5)*(1+.5*(i%3===0))));
           const sy=clamp(yy,0,h-thick);
-          ctx.globalAlpha=clamp(.36+active*.58,0,.92);
-          // source clipping avoids black borders; the original image remains beneath.
+          ctx.globalAlpha=clamp(.18+active*.34,0,.52);
           ctx.drawImage(photo,0,sy,w,thick,step,sy,w,thick);
         } else {
-          const xx=Math.round((.05+.9*(i+.3)/count + .025*Math.sin(t*.28+seed))*w);
-          const thick=Math.max(2,Math.round((2+this.signalDensity*7)*(1+.6*(i%3===0))));
+          const xx=Math.round((.08+.84*(i+.3)/count + .018*Math.sin(t*.28+seed))*w);
+          const thick=Math.max(2,Math.round((2+this.signalDensity*5)*(1+.4*(i%3===0))));
           const sx=clamp(xx,0,w-thick);
-          ctx.globalAlpha=clamp(.34+active*.52,0,.90);
+          ctx.globalAlpha=clamp(.16+active*.32,0,.50);
           ctx.drawImage(photo,sx,0,thick,h,sx,step,thick,h);
         }
       }
